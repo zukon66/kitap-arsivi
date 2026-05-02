@@ -1,0 +1,270 @@
+﻿<!DOCTYPE html>
+
+<html class="light" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Test Sonucu Gir</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error": "#ffffff",
+                        "secondary": "#505f76",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "on-surface-variant": "#464555",
+                        "surface": "#f7f9fb",
+                        "primary-container": "#4f46e5",
+                        "secondary-container": "#d0e1fb",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "surface-container": "#eceef0",
+                        "on-primary-fixed": "#0f0069",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "tertiary": "#7e3000",
+                        "surface-dim": "#d8dadc",
+                        "secondary-fixed": "#d3e4fe",
+                        "on-background": "#191c1e",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "error-container": "#ffdad6",
+                        "on-primary-container": "#dad7ff",
+                        "primary-fixed": "#e2dfff",
+                        "surface-tint": "#4d44e3",
+                        "outline-variant": "#c7c4d8",
+                        "tertiary-container": "#a44100",
+                        "on-tertiary-fixed": "#351000",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "on-surface": "#191c1e",
+                        "primary": "#3525cd",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-container-low": "#f2f4f6",
+                        "on-secondary-container": "#54647a",
+                        "surface-bright": "#f7f9fb",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "inverse-primary": "#c3c0ff",
+                        "on-primary": "#ffffff",
+                        "outline": "#777587",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-tertiary-container": "#ffd2be",
+                        "surface-container-high": "#e6e8ea",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-surface": "#2d3133",
+                        "on-secondary-fixed": "#0b1c30",
+                        "surface-variant": "#e0e3e5",
+                        "background": "#f7f9fb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "unit": "4px",
+                        "container-padding": "20px",
+                        "gutter": "16px",
+                        "stack-lg": "24px",
+                        "stack-md": "16px"
+                    },
+                    "fontFamily": {
+                        "button": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "h1": ["Inter"],
+                        "h2": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "button": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+        .pt-safe { padding-top: env(safe-area-inset-top, 20px); }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased pt-safe pb-safe selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 border-b bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-slate-100 dark:border-slate-800 shadow-sm flex justify-between items-center w-full px-5 h-16 pt-safe hidden md:flex">
+<div class="flex items-center gap-3 cursor-pointer active:scale-95 transition-transform duration-200">
+<div class="w-8 h-8 rounded-full bg-surface-container overflow-hidden ring-2 ring-primary/10">
+<img alt="Student Profil" class="w-full h-full object-cover" data-alt="A close up, high quality headshot portrait of a cheerful university student in a bright, modern learning environment. Soft, even lighting accentuates a friendly expression. The background is slightly blurred showing subtle hints of modern architecture and natural light. Professional, clean, and optimistic aesthetic suitable for an educational platform avatar." src="https://lh3.googleusercontent.com/aida-public/AB6AXuChsfrPL-nd6Yra6xn2nGAqCldCDo3iUXNqmrmDphqSymduxUU3RORKQabj-8EIH3u_cSY_xFlSFwGRvdU-EYtJT6tv8o4BjK4g_WrDeABWZx71udu4wWQ7zIGJL81Cz2vCV5HYVpfAqJ4YedvyDV5pH7F2yCLCYk263dJGLsSG47yixP45bMzdF0ieyco8Lsabr4QBZjGessG-MQywTQs_7Jvoxi5-mK0Tn71mBSWhD3Av3a6xutlnzB4sMQvxbvttOjrRGRgJcOlH"/>
+</div>
+<span class="text-xl font-black text-indigo-600 dark:text-indigo-400 font-h1">KitapArşiv</span>
+</div>
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 transition-transform duration-200 relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2.5 w-2 h-2 bg-error rounded-full"></span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto px-container-padding pt-6 pb-24 md:pt-24 max-w-2xl mx-auto w-full flex flex-col gap-stack-lg">
+<!-- Page Header -->
+<div class="flex flex-col gap-unit">
+<h1 class="font-h1 text-h1 text-on-surface">Test Sonucu Gir</h1>
+<p class="font-body-md text-body-md text-secondary">Çözdüğün testi hızlıca kaydet, kitap ve konu ilerlemen güncellensin.</p>
+</div>
+<!-- Selection Card -->
+<div class="bg-surface-lowest rounded-xl p-stack-md shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border border-surface-container-high flex flex-col gap-stack-md">
+<!-- Book Selection -->
+<div class="flex flex-col gap-stack-sm">
+<label class="font-label-md text-label-md text-on-surface-variant uppercase" for="book-select">Kitap / Kaynak</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface border border-outline-variant rounded-lg px-4 py-3 font-body-lg text-body-lg text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors cursor-pointer" id="book-select">
+<option disabled="" selected="" value="">Kitap seç...</option>
+<option value="math">345 TYT Matematik</option>
+<option value="apotemi">Apotemi Problemler</option>
+<option value="physics">Aydın TYT Fizik</option>
+<option value="cs">Paragrafın Ritmi</option>
+</select>
+<div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-outline">
+<span class="material-symbols-outlined">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Topic Selection -->
+<div class="flex flex-col gap-stack-sm">
+<label class="font-label-md text-label-md text-on-surface-variant uppercase" for="topic-select">Konu</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface border border-outline-variant rounded-lg px-4 py-3 font-body-lg text-body-lg text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors cursor-pointer" id="topic-select">
+<option disabled="" selected="" value="">Konu seç...</option>
+<option value="t1">Problemler</option>
+<option value="t2">Fonksiyonlar</option>
+<option value="t3">Hareket</option>
+<option value="t4">Paragraf</option>
+</select>
+<div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-outline">
+<span class="material-symbols-outlined">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Test Detail Inputs -->
+<div class="grid grid-cols-2 gap-gutter">
+<div class="flex flex-col gap-stack-sm">
+<label class="font-label-md text-label-md text-on-surface-variant uppercase" for="test-no">Test No</label>
+<input class="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 font-body-lg text-body-lg text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="test-no" placeholder="Örn. 14" type="number"/>
+</div>
+<div class="flex flex-col gap-stack-sm">
+<label class="font-label-md text-label-md text-on-surface-variant uppercase" for="empty-count">Boş</label>
+<input class="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 font-body-lg text-body-lg text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="empty-count" placeholder="0" type="number"/>
+</div>
+<div class="flex flex-col gap-stack-sm">
+<label class="font-label-md text-label-md text-on-surface-variant uppercase" for="correct-count">Doğru</label>
+<input class="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 font-body-lg text-body-lg text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="correct-count" placeholder="Örn. 24" type="number"/>
+</div>
+<div class="flex flex-col gap-stack-sm">
+<label class="font-label-md text-label-md text-on-surface-variant uppercase" for="wrong-count">Yanlış</label>
+<input class="w-full bg-surface border border-outline-variant rounded-lg px-4 py-3 font-body-lg text-body-lg text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="wrong-count" placeholder="Örn. 6" type="number"/>
+</div>
+</div>
+</div>
+<!-- Action Grid (Tactile Input) -->
+<div class="flex flex-col gap-stack-sm">
+<h2 class="font-label-md text-label-md text-secondary uppercase px-1">Sonuç</h2>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-gutter">
+<!-- Çözüldü -->
+<button class="bg-[#e8f5e9] hover:bg-[#c8e6c9] active:bg-[#a5d6a7] text-[#2e7d32] rounded-xl p-stack-md flex flex-col items-center justify-center gap-3 transition-all duration-200 active:scale-95 border border-[#c8e6c9]/50 shadow-sm min-h-[120px]">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-button text-button">Çözüldü</span>
+</button>
+<!-- Yanlışlı -->
+<button class="bg-error-container/50 hover:bg-error-container active:bg-[#ffb4ab] text-on-error-container rounded-xl p-stack-md flex flex-col items-center justify-center gap-3 transition-all duration-200 active:scale-95 border border-error-container shadow-sm min-h-[120px]">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">cancel</span>
+<span class="font-button text-button">Yanlışlı</span>
+</button>
+<!-- Koça Sor -->
+<button class="bg-[#fff8e1] hover:bg-[#ffecb3] active:bg-[#ffe082] text-[#f57f17] rounded-xl p-stack-md flex flex-col items-center justify-center gap-3 transition-all duration-200 active:scale-95 border border-[#ffecb3]/50 shadow-sm min-h-[120px]">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">help</span>
+<span class="font-button text-button">Koça Sor</span>
+</button>
+</div>
+</div>
+<!-- Optional Notes (Minimal Typing) -->
+<div class="flex flex-col gap-stack-sm mt-stack-sm">
+<label class="font-label-md text-label-md text-secondary uppercase px-1" for="quick-note">Koça Sorulacak Not (İsteğe Bağlı)</label>
+<input class="w-full bg-surface-lowest border border-outline-variant rounded-lg px-4 py-3 font-body-md text-body-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="quick-note" placeholder="Örn. Problemler Test 14, 7. soruda yöntem seçimi" type="text"/>
+</div>
+<button class="w-full bg-primary text-on-primary rounded-xl py-3 font-button text-button shadow-[0_8px_24px_rgba(79,70,229,0.25)] active:scale-[0.98] transition-transform" type="button">
+Sonucu Kaydet
+</button>
+<p class="font-label-md text-label-md text-secondary text-center">Bu prototipte kayıt yapılmaz; alanlar gerçek uygulama akışını göstermek içindir.</p>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 w-full z-50 border-t border-slate-100 dark:border-slate-800 rounded-t-[20px] bg-white dark:bg-slate-900 shadow-[0px_-4px_12px_rgba(0,0,0,0.05)] flex justify-around items-center px-2 pb-safe pt-2 h-20 md:hidden">
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[24px]">dashboard</span>
+<span class="text-[11px] font-medium font-sans truncate w-full text-center">Panel</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[24px]">auto_stories</span>
+<span class="text-[11px] font-medium font-sans truncate w-full text-center">Arşiv</span>
+</button>
+<!-- Active Tab: Hızlı Ekle -->
+<button class="flex flex-col items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 rounded-2xl px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16 relative -top-1">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">add_circle</span>
+<span class="text-[11px] font-medium font-sans truncate w-full text-center">Hızlı Ekle</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[24px]">psychology</span>
+<span class="text-[11px] font-medium font-sans truncate w-full text-center">Koç</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[24px]">person</span>
+<span class="text-[11px] font-medium font-sans truncate w-full text-center">Profil</span>
+</button>
+</nav>
+<script>
+  const navTargets = {
+    "Panel": "sayfa1.html",
+    "Arşiv": "sayfa2.html",
+    "Hızlı Ekle": "sayfa3.html",
+    "Koç": "sayfa5.html",
+    "Profil": "sayfa1.html"
+  };
+
+  document.querySelectorAll("nav a, nav button").forEach((item) => {
+    const text = item.innerText.replace(/\s+/g, " ").trim();
+    const targetLabel = Object.keys(navTargets).find((label) => text.includes(label));
+    if (!targetLabel) return;
+
+    if (item.tagName === "A") {
+      item.setAttribute("href", navTargets[targetLabel]);
+    } else {
+      item.type = "button";
+      item.addEventListener("click", () => {
+        window.location.href = navTargets[targetLabel];
+      });
+    }
+  });
+</script>
+</body></html>
+
+
+
+
+
+

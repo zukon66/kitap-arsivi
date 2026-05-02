@@ -1,0 +1,308 @@
+﻿<!DOCTYPE html>
+
+<html class="light" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Kitap Arşivi - YKS Kitapları</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error": "#ffffff",
+                        "secondary": "#505f76",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "on-surface-variant": "#464555",
+                        "surface": "#f7f9fb",
+                        "primary-container": "#4f46e5",
+                        "secondary-container": "#d0e1fb",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "surface-container": "#eceef0",
+                        "on-primary-fixed": "#0f0069",
+                        "tertiary-fixed-dim": "#ffb695",
+                        "tertiary": "#7e3000",
+                        "surface-dim": "#d8dadc",
+                        "secondary-fixed": "#d3e4fe",
+                        "on-background": "#191c1e",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "tertiary-fixed": "#ffdbcc",
+                        "error-container": "#ffdad6",
+                        "on-primary-container": "#dad7ff",
+                        "primary-fixed": "#e2dfff",
+                        "surface-tint": "#4d44e3",
+                        "outline-variant": "#c7c4d8",
+                        "tertiary-container": "#a44100",
+                        "on-tertiary-fixed": "#351000",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "on-surface": "#191c1e",
+                        "primary": "#3525cd",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-container-low": "#f2f4f6",
+                        "on-secondary-container": "#54647a",
+                        "surface-bright": "#f7f9fb",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed-variant": "#7b2f00",
+                        "inverse-primary": "#c3c0ff",
+                        "on-primary": "#ffffff",
+                        "outline": "#777587",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-tertiary-container": "#ffd2be",
+                        "surface-container-high": "#e6e8ea",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-surface": "#2d3133",
+                        "on-secondary-fixed": "#0b1c30",
+                        "surface-variant": "#e0e3e5",
+                        "background": "#f7f9fb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "unit": "4px",
+                        "container-padding": "20px",
+                        "gutter": "16px",
+                        "stack-lg": "24px",
+                        "stack-md": "16px"
+                    },
+                    "fontFamily": {
+                        "button": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "h1": ["Inter"],
+                        "h2": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "button": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Mobile-first constraint for demo purposes */
+        body { max-width: 480px; margin: 0 auto; background-color: #f2f4f6; position: relative; min-height: 100vh; overflow-x: hidden; }
+        .ambient-shadow-1 { box-shadow: 0px 4px 12px rgba(0,0,0,0.05); }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased font-body-md">
+<!-- TopAppBar JSON execution -->
+<header class="fixed top-0 w-full max-w-[480px] z-50 border-b shadow-sm flex justify-between items-center px-5 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-slate-100 dark:border-slate-800">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden shrink-0">
+<img alt="Avatar" class="w-full h-full object-cover" data-alt="A smTümü, circular Profil avatar showing a young student smiling brightly, set against a bright, modern, minimalist light-mode background. The color palette focuses on soft pastels to indicate a friendly, academic context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA-uAzhAZ7zF-Os0L-GUO5dRGspdqDIZBnNArh4d6n1GHLyrvnfu5zXJugR_3BGW_5eIKzlWkldqSuAyNGPkUNpT3C6VkjiEeM1GjSlZhVYYxQLoYSDQtDQoBDdkM2G4MJFg709SHDpdhgtwvr5lTC9a_GSAqgOEUW4Lnz6FLxU0igmahTPCh54JDqGjpK285lkfcY1fIwvzfzvL2u3rCQeyVK148JcoA7LtXcTYyV_43GFcok8WkUy_gd7rreeiTQ0OG2aEP-jjBDt"/>
+</div>
+<h1 class="font-sans font-semibold tracking-tight text-slate-900 dark:text-slate-50 text-xl font-black text-indigo-600 dark:text-indigo-400">KitapArşiv</h1>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 transition-transform duration-200 text-indigo-600 dark:text-indigo-400">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+</header>
+<main class="pt-[88px] pb-[100px] px-container-padding flex flex-col gap-stack-lg min-h-screen bg-background">
+<!-- Search and Filters Section -->
+<section class="flex flex-col gap-stack-md">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-10 pr-4 text-body-md font-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors placeholder:text-outline shadow-sm text-on-surface" placeholder="Kitap, yayın veya konu ara..." type="text"/>
+</div>
+<!-- Chips -->
+<div class="flex overflow-x-auto gap-2 pb-1 scrollbar-hide">
+<button class="whitespace-nowrap px-4 py-1.5 rounded-full bg-primary-container text-on-primary-container font-label-md text-label-md shadow-sm transition-transform active:scale-95">Tümü</button>
+<button class="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md hover:bg-surface-variant transition-colors">Matematik</button>
+<button class="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md hover:bg-surface-variant transition-colors">Fen</button>
+<button class="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md hover:bg-surface-variant transition-colors">TYT</button>
+<button class="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md hover:bg-surface-variant transition-colors">AYT</button>
+<button class="whitespace-nowrap px-4 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md hover:bg-surface-variant transition-colors">Aktif</button>
+</div>
+</section>
+<!-- Book List Section -->
+<section class="flex flex-col gap-stack-md">
+<!-- Card 1 -->
+<a class="bg-surface-container-lowest rounded-xl p-4 ambient-shadow-1 border-l-[4px] border-primary flex flex-col gap-3 relative transition-transform active:scale-[0.98] no-underline" href="sayfa4.html">
+<div class="flex justify-between items-start">
+<div class="flex gap-2">
+<span class="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-label-md text-[10px] uppercase tracking-wider">Matematik</span>
+<span class="px-2 py-0.5 rounded-full bg-secondary/10 text-secondary font-label-md text-[10px] uppercase tracking-wider">TYT</span>
+<span class="px-2 py-0.5 rounded-full bg-primary-fixed text-primary font-label-md text-[10px] uppercase tracking-wider">Aktif</span>
+</div>
+<span class="text-outline hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</span>
+</div>
+<div>
+<h2 class="font-h2 text-h2 text-on-surface mb-1">345 TYT Matematik</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">345 Yayınları • Problemler, Fonksiyonlar</p>
+</div>
+<div class="mt-2 flex flex-col gap-1.5">
+<div class="flex justify-between items-center font-label-md text-label-md">
+<span class="text-outline">İlerleme • 41/60 test</span>
+<span class="text-primary font-bold">68%</span>
+</div>
+<div class="w-full bg-surface-variant rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 68%;"></div>
+</div>
+</div>
+</a>
+<!-- Card 2 -->
+<article class="bg-surface-container-lowest rounded-xl p-4 ambient-shadow-1 border-l-[4px] border-tertiary flex flex-col gap-3 relative transition-transform active:scale-[0.98]">
+<div class="flex justify-between items-start">
+<div class="flex gap-2">
+<span class="px-2 py-0.5 rounded-full bg-tertiary/10 text-tertiary font-label-md text-[10px] uppercase tracking-wider">Fen</span>
+<span class="px-2 py-0.5 rounded-full bg-secondary/10 text-secondary font-label-md text-[10px] uppercase tracking-wider">TYT</span>
+<span class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-tertiary font-label-md text-[10px] uppercase tracking-wider">Beklemede</span>
+</div>
+<button class="text-outline hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+<div>
+<h2 class="font-h2 text-h2 text-on-surface mb-1">Aydın TYT Fizik</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Aydın Yayınları • Hareket, Kuvvet</p>
+</div>
+<div class="mt-2 flex flex-col gap-1.5">
+<div class="flex justify-between items-center font-label-md text-label-md">
+<span class="text-outline">İlerleme • 8/25 test</span>
+<span class="text-tertiary font-bold">32%</span>
+</div>
+<div class="w-full bg-surface-variant rounded-full h-1.5 overflow-hidden">
+<div class="bg-tertiary h-full rounded-full" style="width: 32%;"></div>
+</div>
+</div>
+</article>
+<!-- Card 3 -->
+<article class="bg-surface-container-lowest rounded-xl p-4 ambient-shadow-1 border-l-[4px] border-primary-container flex flex-col gap-3 relative transition-transform active:scale-[0.98]">
+<div class="flex justify-between items-start">
+<div class="flex gap-2">
+<span class="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-label-md text-[10px] uppercase tracking-wider">Matematik</span>
+<span class="px-2 py-0.5 rounded-full bg-secondary/10 text-secondary font-label-md text-[10px] uppercase tracking-wider">TYT</span>
+<span class="px-2 py-0.5 rounded-full bg-primary-fixed text-primary font-label-md text-[10px] uppercase tracking-wider">Koça Sor</span>
+</div>
+<button class="text-outline hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+<div>
+<h2 class="font-h2 text-h2 text-on-surface mb-1">Apotemi Problemler</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Apotemi Yayınları • Problemler</p>
+</div>
+<div class="mt-2 flex flex-col gap-1.5">
+<div class="flex justify-between items-center font-label-md text-label-md">
+<span class="text-outline">İlerleme • 12/30 test</span>
+<span class="text-primary font-bold">40%</span>
+</div>
+<div class="w-full bg-surface-variant rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary-container h-full rounded-full" style="width: 40%;"></div>
+</div>
+</div>
+</article>
+<!-- Card 3 -->
+<article class="bg-surface-container-lowest rounded-xl p-4 ambient-shadow-1 border-l-[4px] border-outline-variant flex flex-col gap-3 relative transition-transform active:scale-[0.98] opacity-80">
+<div class="flex justify-between items-start">
+<div class="flex gap-2">
+<span class="px-2 py-0.5 rounded-full bg-surface-variant text-on-surface-variant font-label-md text-[10px] uppercase tracking-wider">Türkçe</span>
+<span class="px-2 py-0.5 rounded-full bg-secondary/10 text-secondary font-label-md text-[10px] uppercase tracking-wider">TYT</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-secondary font-label-md text-[10px] uppercase tracking-wider">Başlanmadı</span>
+</div>
+<button class="text-outline hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+</div>
+<div>
+<h2 class="font-h2 text-h2 text-on-surface mb-1">Paragrafın Ritmi</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Kronometre Yayınları • Paragraf</p>
+</div>
+<div class="mt-2 flex flex-col gap-1.5">
+<div class="flex justify-between items-center font-label-md text-label-md">
+<span class="text-outline">Durum</span>
+<span class="text-outline font-bold">Başlanmadı</span>
+</div>
+<div class="w-full bg-surface-variant rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 0%;"></div>
+</div>
+</div>
+</article>
+</section>
+</main>
+<!-- BottomNavBar JSON execution - Active on "Arşiv" -->
+<nav class="fixed bottom-0 w-full max-w-[480px] z-50 border-t rounded-t-[20px] bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 shadow-[0px_-4px_12px_rgba(0,0,0,0.05)] flex justify-around items-center px-2 pb-safe pt-2 h-20 md:hidden text-[11px] font-medium font-sans text-indigo-600 dark:text-indigo-400">
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[24px]" data-icon="Panel">dashboard</span>
+<span class="truncate w-full text-center">Panel</span>
+</button>
+<button class="flex flex-col items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 rounded-2xl px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[24px]" data-icon="auto_stories" data-weight="fill" style="font-variation-settings: 'FILL' 1;">auto_stories</span>
+<span class="truncate w-full text-center">Arşiv</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[32px] text-primary" data-icon="add_circle">add_circle</span>
+<span class="sr-only">Hızlı Ekle</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[24px]" data-icon="psychology">psychology</span>
+<span class="truncate w-full text-center">Koç</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 px-3 py-1.5 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-90 transition-all duration-150 cubic-bezier(0.4, 0, 0.2, 1) gap-1 w-16">
+<span class="material-symbols-outlined text-[24px]" data-icon="person">person</span>
+<span class="truncate w-full text-center">Profil</span>
+</button>
+</nav>
+<script>
+  const navTargets = {
+    "Panel": "sayfa1.html",
+    "Arşiv": "sayfa2.html",
+    "Hızlı Ekle": "sayfa3.html",
+    "Koç": "sayfa5.html",
+    "Profil": "sayfa1.html"
+  };
+
+  document.querySelectorAll("nav a, nav button").forEach((item) => {
+    const text = item.innerText.replace(/\s+/g, " ").trim();
+    const targetLabel = Object.keys(navTargets).find((label) => text.includes(label));
+    if (!targetLabel) return;
+
+    if (item.tagName === "A") {
+      item.setAttribute("href", navTargets[targetLabel]);
+    } else {
+      item.type = "button";
+      item.addEventListener("click", () => {
+        window.location.href = navTargets[targetLabel];
+      });
+    }
+  });
+</script>
+</body></html>
+
+
+
+
+
+

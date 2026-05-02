@@ -1,0 +1,261 @@
+﻿<!DOCTYPE html>
+
+<html class="light" lang="tr"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Kitap Detayı - KitapArşiv</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                            "on-error": "#ffffff",
+                            "secondary": "#505f76",
+                            "on-primary-fixed-variant": "#3323cc",
+                            "secondary-fixed-dim": "#b7c8e1",
+                            "on-surface-variant": "#464555",
+                            "surface": "#f7f9fb",
+                            "primary-container": "#4f46e5",
+                            "secondary-container": "#d0e1fb",
+                            "on-secondary": "#ffffff",
+                            "on-tertiary": "#ffffff",
+                            "surface-container": "#eceef0",
+                            "on-primary-fixed": "#0f0069",
+                            "tertiary-fixed-dim": "#ffb695",
+                            "tertiary": "#7e3000",
+                            "surface-dim": "#d8dadc",
+                            "secondary-fixed": "#d3e4fe",
+                            "on-background": "#191c1e",
+                            "primary-fixed-dim": "#c3c0ff",
+                            "tertiary-fixed": "#ffdbcc",
+                            "error-container": "#ffdad6",
+                            "on-primary-container": "#dad7ff",
+                            "primary-fixed": "#e2dfff",
+                            "surface-tint": "#4d44e3",
+                            "outline-variant": "#c7c4d8",
+                            "tertiary-container": "#a44100",
+                            "on-tertiary-fixed": "#351000",
+                            "on-secondary-fixed-variant": "#38485d",
+                            "on-surface": "#191c1e",
+                            "primary": "#3525cd",
+                            "surface-container-highest": "#e0e3e5",
+                            "surface-container-low": "#f2f4f6",
+                            "on-secondary-container": "#54647a",
+                            "surface-bright": "#f7f9fb",
+                            "error": "#ba1a1a",
+                            "on-tertiary-fixed-variant": "#7b2f00",
+                            "inverse-primary": "#c3c0ff",
+                            "on-primary": "#ffffff",
+                            "outline": "#777587",
+                            "on-error-container": "#93000a",
+                            "inverse-on-surface": "#eff1f3",
+                            "on-tertiary-container": "#ffd2be",
+                            "surface-container-high": "#e6e8ea",
+                            "surface-container-lowest": "#ffffff",
+                            "inverse-surface": "#2d3133",
+                            "on-secondary-fixed": "#0b1c30",
+                            "surface-variant": "#e0e3e5",
+                            "background": "#f7f9fb"
+                    },
+                    "borderRadius": {
+                            "DEFAULT": "0.25rem",
+                            "lg": "0.5rem",
+                            "xl": "0.75rem",
+                            "full": "9999px"
+                    },
+                    "spacing": {
+                            "stack-sm": "8px",
+                            "unit": "4px",
+                            "container-padding": "20px",
+                            "gutter": "16px",
+                            "stack-lg": "24px",
+                            "stack-md": "16px"
+                    },
+                    "fontFamily": {
+                            "button": ["Inter"],
+                            "label-md": ["Inter"],
+                            "body-lg": ["Inter"],
+                            "h1": ["Inter"],
+                            "h2": ["Inter"],
+                            "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                            "button": ["14px", {"lineHeight": "20px", "fontWeight": "600"}],
+                            "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                            "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                            "h1": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                            "h2": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                            "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .fill-icon { font-variation-settings: 'FILL' 1; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col pb-[100px]">
+<!-- TopAppBar (Transactional - Hidden nav items, back button prominent) -->
+<header class="fixed top-0 w-full z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md shadow-sm border-b border-slate-100 dark:border-slate-800">
+<div class="flex justify-between items-center w-full px-5 h-16">
+<button class="text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 transition-transform duration-200 p-2 rounded-full -ml-2 flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<div class="font-sans font-semibold tracking-tight text-slate-900 dark:text-slate-50 flex-1 text-center">
+                345 TYT Matematik
+            </div>
+<div class="w-10"></div> <!-- Spacer for balance -->
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 mt-16 px-container-padding pt-stack-lg">
+<!-- Hero Section: Book Title & Progress -->
+<section class="mb-stack-lg flex flex-col items-center bg-surface-container-lowest rounded-xl p-stack-lg shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border border-surface-variant">
+<div class="relative w-32 h-32 mb-stack-md flex items-center justify-center">
+<!-- Circular Progress Background -->
+<svg class="absolute inset-0 w-full h-full transform -rotate-90" viewbox="0 0 100 100">
+<circle cx="50" cy="50" fill="none" r="45" stroke="#f2f4f6" stroke-linecap="round" stroke-width="8"></circle>
+<!-- Circular Progress Fill (75%) -->
+<circle cx="50" cy="50" fill="none" r="45" stroke="#4f46e5" stroke-dasharray="282.7" stroke-dashoffset="70.67" stroke-linecap="round" stroke-width="8"></circle>
+</svg>
+<div class="flex flex-col items-center justify-center z-10">
+<span class="font-h1 text-h1 text-on-surface">75%</span>
+<span class="font-label-md text-label-md text-secondary uppercase">Tamamlandı</span>
+</div>
+</div>
+<div class="text-center">
+<h1 class="font-h1 text-h1 text-on-surface mb-unit">345 TYT Matematik</h1>
+<p class="font-body-md text-body-md text-secondary">345 Yayınları • TYT Matematik • Aktif döngüde</p>
+</div>
+<div class="mt-stack-md flex gap-stack-sm w-full justify-center">
+<div class="bg-surface-container-low rounded-full px-4 py-1.5 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[16px]" data-icon="library_books">library_books</span>
+<span class="font-label-md text-label-md text-on-surface-variant">12 Konu</span>
+</div>
+<div class="bg-surface-container-low rounded-full px-4 py-1.5 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[16px]" data-icon="task_alt">task_alt</span>
+<span class="font-label-md text-label-md text-on-surface-variant">45/60 Test</span>
+</div>
+</div>
+<a class="mt-stack-md w-full bg-primary text-on-primary rounded-xl py-3 font-button text-button text-center no-underline shadow-[0_8px_24px_rgba(79,70,229,0.25)] active:scale-[0.98] transition-transform" href="sayfa3.html">
+Test Sonucu Gir
+</a>
+</section>
+<!-- Topics List -->
+<section>
+<h2 class="font-h2 text-h2 text-on-surface mb-stack-md px-2">Konu Dağılımı</h2>
+<div class="flex flex-col gap-stack-sm">
+<!-- Topic Card: Tamamlandıd -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border-l-[4px] border-l-primary flex items-center justify-between border-y border-r border-surface-variant">
+<div class="flex-1 pr-4">
+<h3 class="font-body-lg text-body-lg text-on-surface font-semibold mb-1">Temel Kavramlar</h3>
+<p class="font-body-md text-body-md text-secondary flex items-center gap-1">
+<span>10/10 Test Çözüldü • %88 doğruluk</span>
+</p>
+<span class="inline-flex mt-2 px-2 py-0.5 rounded-full bg-primary-fixed text-primary font-label-md text-[10px] uppercase tracking-wider">Bitti</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined fill-icon" data-icon="check_circle">check_circle</span>
+</div>
+</div>
+<!-- Topic Card: Tamamlandıd -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border-l-[4px] border-l-primary flex items-center justify-between border-y border-r border-surface-variant">
+<div class="flex-1 pr-4">
+<h3 class="font-body-lg text-body-lg text-on-surface font-semibold mb-1">Problemler</h3>
+<p class="font-body-md text-body-md text-secondary flex items-center gap-1">
+<span>15/15 Test Çözüldü • 2 soru koça sorulacak</span>
+</p>
+<span class="inline-flex mt-2 px-2 py-0.5 rounded-full bg-primary-fixed text-primary font-label-md text-[10px] uppercase tracking-wider">Bitti</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined fill-icon" data-icon="check_circle">check_circle</span>
+</div>
+</div>
+<!-- Topic Card: Devam Ediyor -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0px_8px_24px_rgba(0,0,0,0.1)] border-l-[4px] border-l-secondary flex items-center justify-between border-y border-r border-surface-variant relative overflow-hidden">
+<!-- Subtle active background tint -->
+<div class="absolute inset-0 bg-primary/5 z-0 pointer-events-none"></div>
+<div class="flex-1 pr-4 z-10">
+<h3 class="font-body-lg text-body-lg text-on-surface font-semibold mb-1">Fonksiyonlar</h3>
+<p class="font-body-md text-body-md text-secondary flex items-center gap-1">
+<span>12/20 Test Çözüldü • 8 test kaldı</span>
+</p>
+<span class="inline-flex mt-2 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[10px] uppercase tracking-wider">Devam Ediyor</span>
+<!-- Linear Progress Bar -->
+<div class="w-full h-2 bg-surface-container mt-2 rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 60%;"></div>
+</div>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-secondary shrink-0 z-10">
+<span class="material-symbols-outlined" data-icon="schedule">schedule</span>
+</div>
+</div>
+<!-- Topic Card: Başlanmadı -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border-l-[4px] border-l-surface-variant flex items-center justify-between border-y border-r border-surface-variant opacity-75">
+<div class="flex-1 pr-4">
+<h3 class="font-body-lg text-body-lg text-on-surface font-semibold mb-1">Geometriye Giriş</h3>
+<p class="font-body-md text-body-md text-secondary flex items-center gap-1">
+<span>0/15 Test Çözüldü • haftalık programda değil</span>
+</p>
+<span class="inline-flex mt-2 px-2 py-0.5 rounded-full bg-surface-container-high text-secondary font-label-md text-[10px] uppercase tracking-wider">Başlanmadı</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-outline shrink-0">
+<span class="material-symbols-outlined" data-icon="lock">lock</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- FAB Suppression: Contextually disabled globally per prompt, but explicitly requested for THIS screen in the user prompt. 
+         Wait, prompt says "Floating action button for 'Add Test Result'." Re-evaluating mandate: "You MUST ONLY render the FAB if the screen's primary purpose aligns perfectly with the FAB's action". 
+         Since the user explicitly asked for a FAB for "Add Test Result" on this specific Book Detail screen, we will provide it, though normally details screens suppress global FABs. This is a local context FAB. -->
+<div class="fixed bottom-6 right-6 z-50">
+<a class="bg-primary text-on-primary w-14 h-14 rounded-full shadow-[0px_8px_24px_rgba(79,70,229,0.3)] flex items-center justify-center active:scale-95 transition-transform duration-200 border-t border-white/20" href="sayfa3.html">
+<span class="material-symbols-outlined text-3xl" data-icon="add">add</span>
+</a>
+</div>
+<!-- Navigation Shell Suppression: This is a Detail/Transactional page (indicated by the Back button requirement). BottomNavBar/SideNav are suppressed per the Semantic Shell Mandate. -->
+<script>
+  const navTargets = {
+    "Panel": "sayfa1.html",
+    "Arşiv": "sayfa2.html",
+    "Hızlı Ekle": "sayfa3.html",
+    "Koç": "sayfa5.html",
+    "Profil": "sayfa1.html"
+  };
+
+  document.querySelectorAll("nav a, nav button").forEach((item) => {
+    const text = item.innerText.replace(/\s+/g, " ").trim();
+    const targetLabel = Object.keys(navTargets).find((label) => text.includes(label));
+    if (!targetLabel) return;
+
+    if (item.tagName === "A") {
+      item.setAttribute("href", navTargets[targetLabel]);
+    } else {
+      item.type = "button";
+      item.addEventListener("click", () => {
+        window.location.href = navTargets[targetLabel];
+      });
+    }
+  });
+</script>
+</body></html>
+
+
+
+
+
+

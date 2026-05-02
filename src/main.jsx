@@ -1,14 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
+import { emptyState, loadStoredState, saveStoredState, storageKey } from './utils/storage';
 import {
-  books as initialBooks,
-  programItems,
-  testResults as initialTestResults,
-} from './data/sampleData';
-
-const STORAGE_KEY = 'kitaparsiv.v1';
+  bookProgress, clampNumber, createId, getResultSolvedCount, getSolvedTestCountInfo,
+  normalizeText, recalculateBookTotals, statusLabel, testEntryLabel, testResultTopicDetail,
+  topicStatusFromCounts, topicStatusLabel, bookName,
+} from './utils/helpers';
+import { getBringRecommendations, parseProgramExport } from './utils/matching';
+import {
+  loadAllFromDB,
+  upsertBook, deleteBook as dbDeleteBook,
+  upsertTopic, deleteTopic as dbDeleteTopic,
+  upsertTestResult, deleteTestResult as dbDeleteTestResult,
+  replaceProgramItems,
+} from './utils/supabaseDB';
 
 const navItems = [
   { id: 'dashboard', label: 'Panel', icon: 'dashboard' },
@@ -49,58 +56,247 @@ function Icon({ name, filled = false }) {
   );
 }
 
-function loadStoredState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return {
-        books: structuredClone(initialBooks),
-        programItems: structuredClone(programItems),
-        testResults: structuredClone(initialTestResults),
-      };
-    }
-    const parsed = JSON.parse(raw);
-    return {
-      books: parsed.books ?? structuredClone(initialBooks),
-      programItems: parsed.programItems ?? structuredClone(programItems),
-      testResults: parsed.testResults ?? structuredClone(initialTestResults),
-    };
-  } catch {
-    return {
-      books: structuredClone(initialBooks),
-      programItems: structuredClone(programItems),
-      testResults: structuredClone(initialTestResults),
-    };
-  }
-}
-
-function saveStoredState(nextBooks, nextResults, nextProgramItems = programItems) {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ books: nextBooks, programItems: nextProgramItems, testResults: nextResults }),
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function getInitialPage() {
   const page = window.location.hash.replace('#', '');
   return navItems.some((item) => item.id === page) || page === 'book' ? page : 'dashboard';
 }
 
+function LoadingScreen() {
+  return (
+    <div className="login-screen">
+      <div className="login-loading">
+        <div className="login-brand">
+          <div className="avatar large">KA</div>
+          <h1>KitapArşiv</h1>
+        </div>
+        <span className="helper-text">Yükleniyor...</span>
+      </div>
+    </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4" />
+      <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853" />
+      <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05" />
+      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" fill="#EA4335" />
+    </svg>
+  );
+}
+
+function LoginScreen() {
+  const [authMode, setAuthMode] = useState('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleGoogleLogin = async () => {
+    if (!supabase) return;
+    setLoading(true);
+    setMessage('');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+    if (error) {
+      setMessage(error.message);
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordAuth = async (event) => {
+    event.preventDefault();
+    if (!supabase || !email.trim() || !password) return;
+    if (authMode === 'signup' && password !== passwordConfirm) {
+      setMessage('Şifreler eşleşmiyor.');
+      return;
+    }
+
+    setLoading(true);
+    setMessage(authMode === 'signup' ? 'Hesap oluşturuluyor...' : 'Giriş yapılıyor...');
+
+    const { error } = authMode === 'signup'
+      ? await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { emailRedirectTo: window.location.origin },
+      })
+      : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+
+    setLoading(false);
+    if (error) {
+      setMessage(error.message);
+    } else {
+      setMessage(authMode === 'signup'
+        ? 'Hesap oluşturuldu. E-posta kutunu kontrol et, onay gerekebilir.'
+        : 'Giriş yapılıyor...');
+    }
+  };
+
+  const sendMagicLink = async () => {
+    if (!supabase || !email.trim()) {
+      setMessage('Önce e-posta adresini gir.');
+      return;
+    }
+    setMessage('Bağlantı gönderiliyor...');
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+    setMessage(error ? error.message : 'E-posta kutunu kontrol et, giriş bağlantısı gönderildi.');
+  };
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-brand">
+          <div className="avatar large">KA</div>
+          <h1>KitapArşiv</h1>
+          <p>YKS kitap ve test takip uygulaması</p>
+        </div>
+
+        {!isSupabaseConfigured && (
+          <p className="error-message">Supabase yapılandırması eksik. .env.local dosyasını kontrol et.</p>
+        )}
+
+        {isSupabaseConfigured && (
+          <>
+            <button
+              className="google-button"
+              disabled={loading}
+              onClick={handleGoogleLogin}
+              type="button"
+            >
+              <GoogleIcon />
+              Google ile Giriş Yap
+            </button>
+
+            <div className="login-divider"><span>veya</span></div>
+
+            <div className="auth-tabs">
+              <button
+                className={`chip ${authMode === 'signin' ? 'primary' : ''}`}
+                onClick={() => { setAuthMode('signin'); setMessage(''); }}
+                type="button"
+              >
+                Giriş
+              </button>
+              <button
+                className={`chip ${authMode === 'signup' ? 'primary' : ''}`}
+                onClick={() => { setAuthMode('signup'); setMessage(''); }}
+                type="button"
+              >
+                Kayıt Ol
+              </button>
+            </div>
+
+            <form className="sync-form" onSubmit={handlePasswordAuth}>
+              <label className="field">
+                <span>E-posta</span>
+                <input
+                  autoComplete="email"
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="ornek@mail.com"
+                  type="email"
+                  value={email}
+                />
+              </label>
+              <label className="field">
+                <span>Şifre</span>
+                <input
+                  autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="En az 6 karakter"
+                  type="password"
+                  value={password}
+                />
+              </label>
+              {authMode === 'signup' && (
+                <label className="field">
+                  <span>Şifre Tekrar</span>
+                  <input
+                    autoComplete="new-password"
+                    onChange={(event) => setPasswordConfirm(event.target.value)}
+                    placeholder="Şifreyi tekrar yaz"
+                    type="password"
+                    value={passwordConfirm}
+                  />
+                </label>
+              )}
+              <button className="primary-button" disabled={loading} type="submit">
+                {authMode === 'signup' ? 'Hesap Oluştur' : 'Giriş Yap'}
+              </button>
+            </form>
+
+            <button className="text-button" onClick={sendMagicLink} type="button">
+              Şifresiz magic link gönder
+            </button>
+          </>
+        )}
+
+        {message && <p className="login-message">{message}</p>}
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  const [appData, setAppData] = useState(loadStoredState);
+  const [appData, setAppData] = useState(emptyState);
   const [page, setPage] = useState(getInitialPage);
-  const [selectedBookId, setSelectedBookId] = useState(appData.books[0]?.id);
+  const [selectedBookId, setSelectedBookId] = useState(undefined);
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(Boolean(isSupabaseConfigured));
+  const [syncStatus, setSyncStatus] = useState(null); // null | 'syncing' | 'synced' | 'error'
+  const syncTimer = useRef(null);
 
   const selectedBook = appData.books.find((book) => book.id === selectedBookId) ?? appData.books[0];
   const recommendations = useMemo(
     () => getBringRecommendations(appData.books, appData.testResults, appData.programItems),
     [appData.books, appData.programItems, appData.testResults],
   );
+
+  const loadUserData = useCallback(async (userId) => {
+    const { books, testResults, programItems } = await loadAllFromDB(userId);
+    if (books.length > 0) {
+      const fresh = { books, testResults, programItems };
+      setAppData(fresh);
+      setSelectedBookId(books[0]?.id);
+      saveStoredState(userId, books, testResults, programItems);
+    } else {
+      const stored = loadStoredState(userId);
+      setAppData(stored);
+      setSelectedBookId(stored.books[0]?.id);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      const sess = data.session ?? null;
+      setSession(sess);
+      setAuthLoading(false);
+      if (sess?.user?.id) loadUserData(sess.user.id);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      const sess = nextSession ?? null;
+      setSession(sess);
+      setAuthLoading(false);
+      if (sess?.user?.id) {
+        loadUserData(sess.user.id);
+      } else {
+        setAppData(emptyState());
+        setSelectedBookId(undefined);
+      }
+    });
+    return () => listener.subscription.unsubscribe();
+  }, [loadUserData]);
 
   useEffect(() => {
     const syncPageFromHash = () => setPage(getInitialPage());
@@ -113,9 +309,41 @@ function App() {
     window.location.hash = nextPage;
   };
 
+  const autoSync = useCallback(async (userId, books, testResults, programItems) => {
+    if (!supabase || !userId) return;
+    setSyncStatus('syncing');
+    try {
+      // Normalize tablolara yaz
+      for (const book of books) {
+        await upsertBook(userId, book);
+        for (const topic of book.topics) {
+          await upsertTopic(userId, book.id, topic);
+        }
+      }
+      for (const result of testResults) {
+        await upsertTestResult(userId, result);
+      }
+      await replaceProgramItems(userId, programItems);
+
+      // JSON blob yedeği de tut (fallback)
+      await supabase.from('app_states').upsert(
+        { user_id: userId, data: { version: 1, savedAt: new Date().toISOString(), books, testResults, programItems } },
+        { onConflict: 'user_id' },
+      );
+      setSyncStatus('synced');
+    } catch {
+      setSyncStatus('error');
+    }
+  }, []);
+
   const updateData = (nextBooks, nextResults = appData.testResults, nextProgramItems = appData.programItems) => {
     setAppData({ books: nextBooks, programItems: nextProgramItems, testResults: nextResults });
-    saveStoredState(nextBooks, nextResults, nextProgramItems);
+    saveStoredState(session.user.id, nextBooks, nextResults, nextProgramItems);
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    setSyncStatus('syncing');
+    syncTimer.current = setTimeout(() => {
+      autoSync(session.user.id, nextBooks, nextResults, nextProgramItems);
+    }, 1500);
   };
 
   const addBook = (form) => {
@@ -163,6 +391,7 @@ function App() {
     const nextBooks = appData.books.filter((book) => book.id !== bookId);
     const nextResults = appData.testResults.filter((result) => result.bookId !== bookId);
     updateData(nextBooks, nextResults);
+    dbDeleteBook(session.user.id, bookId);
     if (selectedBookId === bookId) {
       setSelectedBookId(nextBooks[0]?.id);
     }
@@ -248,6 +477,7 @@ function App() {
     });
     const nextResults = appData.testResults.filter((result) => result.topicId !== topicId);
     updateData(nextBooks, nextResults);
+    dbDeleteTopic(session.user.id, topicId);
   };
 
   const addTestResult = (form) => {
@@ -383,12 +613,12 @@ function App() {
 
     const nextResults = appData.testResults.filter((item) => item.id !== resultId);
     updateData(nextBooks, nextResults);
+    dbDeleteTestResult(session.user.id, resultId);
   };
 
   const resetData = () => {
-    const fresh = { books: [], programItems: [], testResults: [] };
-    localStorage.removeItem(STORAGE_KEY);
-    saveStoredState(fresh.books, fresh.testResults, fresh.programItems);
+    const fresh = emptyState();
+    localStorage.removeItem(storageKey(session.user.id));
     setAppData(fresh);
     setSelectedBookId(undefined);
     return fresh;
@@ -410,6 +640,7 @@ function App() {
 
   const clearProgram = () => {
     updateData(appData.books, appData.testResults, []);
+    replaceProgramItems(session.user.id, []);
   };
 
   const openBook = (bookId) => {
@@ -417,8 +648,11 @@ function App() {
     navigate('book');
   };
 
+  if (authLoading) return <LoadingScreen />;
+  if (!session) return <LoginScreen />;
+
   return (
-    <AppShell page={page} onNavigate={navigate}>
+    <AppShell page={page} onNavigate={navigate} session={session} syncStatus={syncStatus}>
       {page === 'dashboard' && (
         <Dashboard
           books={appData.books}
@@ -433,6 +667,7 @@ function App() {
           onAddBook={addBook}
           onDeleteBook={deleteBook}
           onOpenBook={openBook}
+          userId={session.user.id}
         />
       )}
       {page === 'add' && (
@@ -454,6 +689,7 @@ function App() {
           testResults={appData.testResults}
           onUpdateBook={updateBookDetails}
           onUpdateTopic={updateTopic}
+          userId={session.user.id}
         />
       )}
       {page === 'coach' && (
@@ -472,6 +708,7 @@ function App() {
           onImportCloudData={importCloudData}
           onReset={resetData}
           programItems={appData.programItems}
+          session={session}
           testResults={appData.testResults}
         />
       )}
@@ -479,17 +716,37 @@ function App() {
   );
 }
 
-function AppShell({ children, page, onNavigate }) {
+function SyncIndicator({ status }) {
+  if (!status) return null;
+  const map = {
+    syncing: { icon: 'sync', label: 'Kaydediliyor', cls: 'syncing' },
+    synced:  { icon: 'cloud_done', label: 'Kaydedildi', cls: 'synced' },
+    error:   { icon: 'cloud_off', label: 'Hata', cls: 'sync-error' },
+  };
+  const item = map[status];
+  if (!item) return null;
+  return (
+    <span className={`sync-indicator ${item.cls}`} title={item.label}>
+      <Icon name={item.icon} />
+    </span>
+  );
+}
+
+function AppShell({ children, page, onNavigate, session, syncStatus }) {
+  const initials = session?.user?.email?.[0]?.toUpperCase() ?? 'KA';
   return (
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <div className="avatar">KA</div>
+          <div className="avatar">{initials}</div>
           <strong>KitapArşiv</strong>
         </div>
-        <button className="icon-button" type="button" aria-label="Bildirimler">
-          <Icon name="notifications" />
-        </button>
+        <div className="topbar-right">
+          <SyncIndicator status={syncStatus} />
+          <button className="icon-button" type="button" aria-label="Bildirimler">
+            <Icon name="notifications" />
+          </button>
+        </div>
       </header>
       <main className="content">{children}</main>
       <nav className="bottom-nav" aria-label="Ana menü">
@@ -608,7 +865,7 @@ function Library({ books, onAddBook, onDeleteBook, onOpenBook }) {
           ))}
         </div>
       </section>
-      {showForm && <BookForm onAddBook={onAddBook} />}
+      {showForm && <BookForm onAddBook={onAddBook} userId={userId} />}
       <section className="stack">
         {books.length === 0 && <EmptyState text="Henüz kitap yok. Kitap Ekle butonuyla gerçek kitaplarını eklemeye başlayabilirsin." />}
         {books.map((book) => (
@@ -643,7 +900,7 @@ function Library({ books, onAddBook, onDeleteBook, onOpenBook }) {
   );
 }
 
-function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook }) {
+function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId }) {
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('Tumu');
@@ -726,7 +983,7 @@ function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook }) {
   );
 }
 
-function BookForm({ onAddBook }) {
+function BookForm({ onAddBook, userId }) {
   const [form, setForm] = useState(emptyBookForm);
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -789,26 +1046,49 @@ function BookForm({ onAddBook }) {
           <input value={form.initialSolvedTests} onChange={(event) => update('initialSolvedTests', event.target.value)} placeholder="12" type="number" />
         </label>
       </div>
-      <ImagePicker value={form.coverImage} onChange={(image) => update('coverImage', image)} />
+      <ImagePicker userId={userId} value={form.coverImage} onChange={(image) => update('coverImage', image)} />
       <button className="primary-button" type="submit">Kitabı Arşive Ekle</button>
     </form>
   );
 }
 
-function ImagePicker({ value, onChange }) {
-  const handleFile = (event) => {
+function ImagePicker({ userId, value, onChange }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  const handleFile = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => onChange(reader.result);
-    reader.readAsDataURL(file);
+    if (supabase && userId) {
+      setUploading(true);
+      setUploadError('');
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${userId}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('covers').upload(path, file, { upsert: true });
+      setUploading(false);
+      if (error) {
+        setUploadError('Görsel yüklenemedi, base64 olarak kaydediliyor.');
+        const reader = new FileReader();
+        reader.onload = () => onChange(reader.result);
+        reader.readAsDataURL(file);
+      } else {
+        const { data } = supabase.storage.from('covers').getPublicUrl(path);
+        onChange(data.publicUrl);
+      }
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => onChange(reader.result);
+      reader.readAsDataURL(file);
+    }
   };
 
   return (
     <label className="field">
       <span>Kapak Görseli</span>
-      <input accept="image/*" capture="environment" onChange={handleFile} type="file" />
+      <input accept="image/*" capture="environment" onChange={handleFile} type="file" disabled={uploading} />
+      {uploading && <small>Yükleniyor...</small>}
+      {uploadError && <small className="field-error">{uploadError}</small>}
       {value && <img className="cover-preview" src={value} alt="Kitap kapağı önizlemesi" />}
       <small>Telefondan fotoğraf çekebilir veya galeriden kapak seçebilirsin.</small>
     </label>
@@ -1336,82 +1616,18 @@ function Profile({ books, onReset, programItems, testResults }) {
   );
 }
 
-function SupabaseProfile({ books, onImportCloudData, onReset, programItems, testResults }) {
+function SupabaseProfile({ books, onImportCloudData, onReset, programItems, session, testResults }) {
   const [resetMessage, setResetMessage] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [passwordConfirm, setPasswordConfirm] = useState('');
-  const [authMode, setAuthMode] = useState('signin');
-  const [session, setSession] = useState(null);
-  const [authMessage, setAuthMessage] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
-
-  useEffect(() => {
-    if (!supabase) return undefined;
-
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null);
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-    });
-
-    return () => listener.subscription.unsubscribe();
-  }, []);
 
   const handleReset = () => {
     const fresh = onReset();
-    setResetMessage(`Ornek veriler silindi: ${fresh.books.length} kitap, ${fresh.testResults.length} test kaydi, ${fresh.programItems.length} program gorevi.`);
-  };
-
-  const sendMagicLink = async (event) => {
-    event.preventDefault();
-    if (!supabase || !email.trim()) return;
-
-    setAuthMessage('Giris baglantisi gonderiliyor...');
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: window.location.origin },
-    });
-
-    setAuthMessage(error ? error.message : 'E-posta kutunu kontrol et. Giris baglantisi gonderildi.');
-  };
-
-  const submitPasswordAuth = async (event) => {
-    event.preventDefault();
-    if (!supabase || !email.trim() || !password) return;
-    if (authMode === 'signup' && password !== passwordConfirm) {
-      setAuthMessage('Sifreler eslesmiyor.');
-      return;
-    }
-
-    setAuthMessage(authMode === 'signup' ? 'Hesap olusturuluyor...' : 'Giris yapiliyor...');
-    const { error } = authMode === 'signup'
-      ? await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: { emailRedirectTo: window.location.origin },
-      })
-      : await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-
-    if (error) {
-      setAuthMessage(error.message);
-      return;
-    }
-
-    setAuthMessage(authMode === 'signup'
-      ? 'Hesap olusturuldu. Supabase e-posta dogrulama istiyorsa posta kutunu kontrol et.'
-      : 'Giris yapildi.');
+    setResetMessage(`Veriler sıfırlandı: ${fresh.books.length} kitap, ${fresh.testResults.length} test kaydı, ${fresh.programItems.length} program görevi.`);
   };
 
   const signOut = async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
-    setAuthMessage('Cikis yapildi.');
   };
 
   const saveCloudBackup = async () => {
@@ -1429,16 +1645,16 @@ function SupabaseProfile({ books, onImportCloudData, onReset, programItems, test
       .from('app_states')
       .upsert({ user_id: session.user.id, data: payload }, { onConflict: 'user_id' });
 
-    setSyncMessage(error ? error.message : 'Bulut yedegi kaydedildi.');
+    setSyncMessage(error ? error.message : 'Bulut yedeği kaydedildi.');
   };
 
   const loadCloudBackup = async () => {
     if (!supabase || !session?.user) return;
 
-    const confirmed = window.confirm('Buluttaki yedek bu cihazdaki verinin uzerine yazilsin mi?');
+    const confirmed = window.confirm('Buluttaki yedek bu cihazdaki verinin üzerine yazılsın mı?');
     if (!confirmed) return;
 
-    setSyncMessage('Buluttan yukleniyor...');
+    setSyncMessage('Buluttan yükleniyor...');
     const { data, error } = await supabase
       .from('app_states')
       .select('data, updated_at')
@@ -1451,81 +1667,46 @@ function SupabaseProfile({ books, onImportCloudData, onReset, programItems, test
     }
 
     if (!data?.data) {
-      setSyncMessage('Bulutta kayitli yedek bulunamadi.');
+      setSyncMessage('Bulutta kayıtlı yedek bulunamadı.');
       return;
     }
 
     const imported = onImportCloudData(data.data);
-    setSyncMessage(`Buluttan yuklendi: ${imported.books.length} kitap, ${imported.testResults.length} test kaydi.`);
+    setSyncMessage(`Buluttan yüklendi: ${imported.books.length} kitap, ${imported.testResults.length} test kaydı.`);
   };
 
   return (
     <section className="info-card">
       <h1>Profil</h1>
-      <p>Veriler localStorage icinde calisir. Supabase baglaninca ayni veri hesabina bulut yedegi olarak kaydedilir.</p>
+      <div className="profile-user-row">
+        <div className="profile-user-avatar">{session?.user?.email?.[0]?.toUpperCase() ?? '?'}</div>
+        <div>
+          <strong>{session?.user?.email}</strong>
+          <span className="helper-text">Giriş yapıldı</span>
+        </div>
+      </div>
       <div className="profile-stats">
         <span>{books.length} kitap</span>
-        <span>{testResults.length} test kaydi</span>
-        <span>{programItems.length} program gorevi</span>
+        <span>{testResults.length} test kaydı</span>
+        <span>{programItems.length} program görevi</span>
       </div>
       <section className="sync-panel">
         <div className="section-title">
-          <h2>Supabase Hesabi</h2>
-          <span className={`chip small ${isSupabaseConfigured ? 'primary' : 'muted'}`}>
-            {isSupabaseConfigured ? 'Hazir' : 'Env eksik'}
-          </span>
+          <h2>Bulut Yedeği</h2>
+          <span className="chip small primary">Bağlı</span>
         </div>
-        {!isSupabaseConfigured && (
-          <p className="helper-text">Supabase icin `.env.local` dosyasinda `VITE_SUPABASE_URL` ve `VITE_SUPABASE_PUBLISHABLE_KEY` gerekli.</p>
-        )}
-        {isSupabaseConfigured && !session && (
-          <>
-            <div className="auth-tabs">
-              <button className={`chip ${authMode === 'signin' ? 'primary' : ''}`} onClick={() => setAuthMode('signin')} type="button">
-                Giris
-              </button>
-              <button className={`chip ${authMode === 'signup' ? 'primary' : ''}`} onClick={() => setAuthMode('signup')} type="button">
-                Kayit Ol
-              </button>
-            </div>
-            <form className="sync-form" onSubmit={submitPasswordAuth}>
-              <label className="field">
-                <span>E-posta</span>
-                <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="ornek@mail.com" type="email" />
-              </label>
-              <label className="field">
-                <span>Sifre</span>
-                <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="En az 6 karakter" type="password" />
-              </label>
-              {authMode === 'signup' && (
-                <label className="field">
-                  <span>Sifre Tekrar</span>
-                  <input value={passwordConfirm} onChange={(event) => setPasswordConfirm(event.target.value)} placeholder="Sifreyi tekrar yaz" type="password" />
-                </label>
-              )}
-              <button className="primary-button" type="submit">
-                {authMode === 'signup' ? 'Hesap Olustur' : 'Giris Yap'}
-              </button>
-            </form>
-            <button className="text-button" onClick={sendMagicLink} type="button">
-              Sifresiz magic link gonder
-            </button>
-          </>
-        )}
-        {session && (
-          <>
-            <p className="helper-text">Giris yapildi: {session.user.email}</p>
-            <div className="form-actions">
-              <button className="primary-inline-button" onClick={saveCloudBackup} type="button">Buluta Kaydet</button>
-              <button className="secondary-button" onClick={loadCloudBackup} type="button">Buluttan Yukle</button>
-            </div>
-            <button className="text-button" onClick={signOut} type="button">Cikis Yap</button>
-          </>
-        )}
-        {authMessage && <p className="success-message">{authMessage}</p>}
+        <div className="form-actions">
+          <button className="primary-inline-button" onClick={saveCloudBackup} type="button">Buluta Kaydet</button>
+          <button className="secondary-button" onClick={loadCloudBackup} type="button">Buluttan Yükle</button>
+        </div>
         {syncMessage && <p className="success-message">{syncMessage}</p>}
       </section>
-      <button className="danger-button" onClick={handleReset} type="button">Ornek Verileri Sil</button>
+      <button className="secondary-button full-width" onClick={signOut} type="button">
+        <Icon name="logout" />
+        Çıkış Yap
+      </button>
+      <div className="divider-line" />
+      <button className="danger-button" onClick={handleReset} type="button">Örnek Verileri Sil</button>
       {resetMessage && <p className="success-message">{resetMessage}</p>}
     </section>
   );
@@ -1772,370 +1953,5 @@ function ProgressRing({ value }) {
   );
 }
 
-function parseProgramExport(exportJson, books = []) {
-  const tasks = exportJson?.data?.tasks;
-  if (!tasks || typeof tasks !== 'object') {
-    throw new Error('tasks alanı bulunamadı');
-  }
-
-  return Object.entries(tasks)
-    .filter(([, rawText]) => String(rawText).trim())
-    .map(([key, rawText], index) => {
-      const [subjectKey, ...dayParts] = key.split('-');
-      const day = normalizeProgramDay(dayParts.join('-'));
-      const text = normalizeSpaces(rawText);
-      const archiveMatch = findBestBookMatch(text, books);
-      const bookName = archiveMatch?.book.name ?? inferBookName(text);
-
-      return {
-        id: `program_import_${index}_${Date.now()}`,
-        source: exportJson.app || 'ders_programi',
-        day,
-        rawText: text,
-        bookName,
-        matchedBookId: archiveMatch?.book.id ?? '',
-        matchedBookName: archiveMatch?.book.name ?? '',
-        matchType: archiveMatch?.type ?? 'none',
-        subject: subjectLabel(subjectKey),
-        topicName: inferTopicName(text, bookName),
-        testRange: inferTestRange(text),
-        isRequired: true,
-      };
-    });
-}
-
-function getBringRecommendations(books, testResults, currentProgramItems) {
-  const recommendations = [];
-  const askCoachBookIds = new Set(testResults.filter((result) => result.askCoach).map((result) => result.bookId));
-
-  books.forEach((book) => {
-    const programMatch = currentProgramItems.find((item) => isProgramBookMatch(item, book));
-    const hasCoachQuestion = askCoachBookIds.has(book.id);
-
-    if (hasCoachQuestion || programMatch) {
-      recommendations.push({
-        book,
-        level: 'kesin_gotur',
-        reasons: [
-          hasCoachQuestion
-            ? 'Koça sorulacak işaretli test var'
-            : `${programMatch.topicName} • Haftalık programda kitap adıyla geçiyor`,
-        ],
-      });
-      return;
-    }
-
-    const topicMatch = currentProgramItems.find((item) => getTopicMatch(book, item));
-    if (topicMatch && book.status === 'aktif') {
-      recommendations.push({
-        book,
-        level: 'kesin_gotur',
-        reasons: [`${getTopicMatch(book, topicMatch)?.name ?? 'Konu'} - Haftalik programdaki konu aktif kitapta var`],
-      });
-      return;
-    }
-
-    if (topicMatch) {
-      recommendations.push({
-        book,
-        level: 'goturmen_iyi_olur',
-        reasons: [`${book.topics[0]?.name ?? 'Konu'} • Aynı konu bu kaynakta da var`],
-      });
-    }
-  });
-
-  return recommendations;
-}
-
-function bookProgress(book) {
-  if (!book.totalTests) return 0;
-  return Math.round((book.solvedTests / book.totalTests) * 100);
-}
-
-function recalculateBookTotals(book) {
-  const totalTests = book.topics.reduce((sum, topic) => sum + (Number(topic.totalTests) || 0), 0);
-  const solvedTests = book.topics.reduce((sum, topic) => sum + (Number(topic.solvedTests) || 0), 0);
-
-  return {
-    ...book,
-    totalTests,
-    solvedTests: Math.min(solvedTests, totalTests),
-  };
-}
-
-function getSolvedTestCountInfo(value) {
-  const text = normalizeSpaces(value);
-  const rangeMatch = text.match(/^(\d+)\s*[-/]\s*(\d+)$/);
-  if (rangeMatch) {
-    const start = Number(rangeMatch[1]);
-    const end = Number(rangeMatch[2]);
-    if (Number.isFinite(start) && Number.isFinite(end)) {
-      return { count: Math.max(1, Math.abs(end - start) + 1), type: 'range' };
-    }
-  }
-
-  if (/^\d+$/.test(text)) {
-    return { count: 1, type: 'single' };
-  }
-
-  const testCount = text.match(/\b(\d+)\s*test\b/i);
-  if (testCount) {
-    return { count: Math.max(1, Number(testCount[1]) || 1), type: 'count' };
-  }
-
-  return { count: 0, type: 'flex' };
-}
-
-function getResultSolvedCount(result) {
-  if (!result) return 0;
-  if (Number.isFinite(Number(result.solvedTestCount))) return Number(result.solvedTestCount);
-  return getSolvedTestCountInfo(result.testNo).count || 1;
-}
-
-function testEntryLabel(result) {
-  const type = result.testEntryType ?? getSolvedTestCountInfo(result.testNo).type;
-  return {
-    single: 'Tek test',
-    range: 'Test araligi',
-    count: 'Toplu test',
-    flex: 'Esnek kayit',
-  }[type] ?? 'Test kaydi';
-}
-
-function testResultTopicDetail(result) {
-  if (result.askCoach) return 'koca sorulacak isaret var';
-  const count = getResultSolvedCount(result);
-  if (result.testEntryType === 'range') return `${result.testNo} araligi kaydedildi`;
-  if (result.testEntryType === 'count') return `${count} test toplu kaydedildi`;
-  if (result.testEntryType === 'flex') return `${result.testNo} esnek kayit`;
-  return `${result.correct} dogru, ${result.wrong} yanlis`;
-}
-
-function clampNumber(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function normalizeSpaces(value) {
-  return String(value).replace(/\s+/g, ' ').trim();
-}
-
-function normalizeText(value) {
-  return normalizeSpaces(value)
-    .toLocaleLowerCase('tr-TR')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replaceAll('ı', 'i')
-    .replaceAll('ğ', 'g')
-    .replaceAll('ü', 'u')
-    .replaceAll('ş', 's')
-    .replaceAll('ö', 'o')
-    .replaceAll('ç', 'c')
-    .replaceAll('ı', 'i')
-    .replaceAll('ğ', 'g')
-    .replaceAll('ü', 'u')
-    .replaceAll('ş', 's')
-    .replaceAll('ö', 'o')
-    .replaceAll('ç', 'c');
-}
-
-function inferBookName(text) {
-  const normalized = normalizeText(text);
-  const knownBooks = [
-    ['mikro orijinal', 'Mikro Orijinal'],
-    ['mikro orjinal', 'Mikro Orijinal'],
-    ['mikroorjinal', 'Mikro Orijinal'],
-    ['bilgi sarmal', 'Bilgi Sarmal'],
-    ['kafadengi', 'Kafadengi'],
-    ['apotemi', 'Apotemi'],
-    ['periskop', 'Periskop'],
-    ['sonuc', 'Sonuç'],
-  ];
-
-  return knownBooks.find(([needle]) => normalized.includes(needle))?.[1] || '';
-}
-
-function inferTopicName(text, bookName) {
-  let cleaned = normalizeSpaces(text)
-    .replace(/\b\d+\s*test\b/gi, '')
-    .replace(/\btest\s*\d+([-/]\d+)?\b/gi, '')
-    .replace(/\b\d+\s+\d+\b/g, '')
-    .replace(/\bçöz\b/gi, '')
-    .trim();
-
-  if (bookName) {
-    cleaned = cleaned.replace(new RegExp(bookName, 'i'), '').trim();
-  }
-
-  return normalizeSpaces(cleaned) || 'Genel';
-}
-
-function inferTestRange(text) {
-  const testRange = String(text).match(/test\s*(\d+\s*[-/]\s*\d+|\d+)/i);
-  if (testRange) return testRange[1].replace(/\s/g, '');
-
-  const looseRange = String(text).match(/\b(\d+\s+\d+)\b/);
-  if (looseRange) return looseRange[1].trim().replace(/\s+/, '-');
-
-  const count = String(text).match(/\b(\d+)\s*test\b/i);
-  if (count) return `${count[1]} test`;
-
-  const questionCount = String(text).match(/\b(\d+)\s*soru\b/i);
-  if (questionCount) return `${questionCount[1]} soru`;
-
-  return '';
-}
-
-function normalizeProgramDay(day) {
-  const cleaned = normalizeSpaces(day).replace(/_/g, ' ');
-  return cleaned || 'Belirtilmedi';
-}
-
-function isProgramBookMatch(item, book) {
-  if (item.matchedBookId && item.matchedBookId === book.id) return true;
-
-  const bookName = normalizeText(book.name);
-  if (!bookName) return false;
-
-  return normalizeText(item.bookName) === bookName
-    || normalizeText(item.rawText).includes(bookName)
-    || compactTextForMatch(item.rawText).includes(compactTextForMatch(book.name));
-}
-
-function getTopicMatch(book, programItem) {
-  const rawText = normalizeText(programItem.rawText);
-  const topicName = normalizeText(programItem.topicName);
-
-  return book.topics.find((topic) => {
-    const normalizedTopic = normalizeText(topic.name);
-    return normalizedTopic && (rawText.includes(normalizedTopic) || topicName.includes(normalizedTopic));
-  });
-}
-
-function findBestBookMatch(text, books) {
-  const normalizedText = normalizeText(text);
-  const compactText = compactTextForMatch(text);
-  let bestMatch = null;
-
-  books.forEach((book) => {
-    const candidates = [
-      { value: book.name, type: 'archive_name', baseScore: 100 },
-      { value: `${book.publisher} ${book.name}`, type: 'publisher_name', baseScore: 95 },
-      { value: `${book.name} ${book.subject}`, type: 'subject_name', baseScore: 88 },
-    ];
-
-    candidates.forEach((candidate) => {
-      const normalizedCandidate = normalizeText(candidate.value);
-      const compactCandidate = compactTextForMatch(candidate.value);
-      if (!normalizedCandidate) return;
-
-      let score = 0;
-      if (normalizedText.includes(normalizedCandidate)) {
-        score = candidate.baseScore;
-      } else if (compactText.includes(compactCandidate)) {
-        score = candidate.baseScore - 6;
-      } else {
-        score = tokenMatchScore(normalizedText, normalizedCandidate);
-      }
-
-      if (score >= 58 && (!bestMatch || score > bestMatch.score)) {
-        bestMatch = { book, score, type: candidate.type };
-      }
-    });
-  });
-
-  return bestMatch;
-}
-
-function tokenMatchScore(text, candidate) {
-  const textTokens = new Set(text.split(/\s+/).filter(Boolean).map(normalizeBookToken));
-  const candidateTokens = candidate
-    .split(/\s+/)
-    .filter((token) => token.length > 2)
-    .map(normalizeBookToken)
-    .filter((token) => token && !BOOK_MATCH_STOP_WORDS.has(token));
-
-  if (candidateTokens.length === 0) return 0;
-
-  const matchedTokens = candidateTokens.filter((token) => textTokens.has(token));
-  const ratio = matchedTokens.length / candidateTokens.length;
-  const hasDistinctiveToken = matchedTokens.some((token) => token.length >= 5 || /\d/.test(token));
-
-  if (!hasDistinctiveToken) return 0;
-  return Math.round(ratio * 86);
-}
-
-function compactTextForMatch(value) {
-  return normalizeText(value).replace(/[^a-z0-9]/g, '');
-}
-
-function normalizeBookToken(token) {
-  return token
-    .replace('orjinal', 'orijinal')
-    .replace('paragrafin', 'paragraf');
-}
-
-const BOOK_MATCH_STOP_WORDS = new Set([
-  'tyt',
-  'ayt',
-  'yayin',
-  'yayinlari',
-  'kitap',
-  'test',
-  'soru',
-  'coz',
-]);
-
-function subjectLabel(subjectKey) {
-  return {
-    matematik: 'Matematik',
-    geometri: 'Geometri',
-    turkce: 'Türkçe',
-    fizik: 'Fizik',
-    kimya: 'Kimya',
-    biyoloji: 'Biyoloji',
-  }[normalizeText(subjectKey)] || subjectKey;
-}
-
-function topicStatusFromCounts(solved, total) {
-  if (solved <= 0) return 'baslanmadi';
-  if (solved >= total) return 'bitti';
-  return 'devam_ediyor';
-}
-
-function statusLabel(status) {
-  return {
-    baslanmadi: 'Başlanmadı',
-    aktif: 'Aktif',
-    beklemede: 'Beklemede',
-    bitti: 'Bitti',
-  }[status];
-}
-
-function topicStatusLabel(status) {
-  return {
-    baslanmadi: 'Başlanmadı',
-    devam_ediyor: 'Devam Ediyor',
-    bitti: 'Bitti',
-  }[status];
-}
-
-function bookName(books, bookId) {
-  return books.find((book) => book.id === bookId)?.name ?? 'Kitap';
-}
-
-function createId(prefix, value) {
-  const slug = String(value || 'item')
-    .trim()
-    .toLowerCase()
-    .replaceAll('ı', 'i')
-    .replaceAll('ğ', 'g')
-    .replaceAll('ü', 'u')
-    .replaceAll('ş', 's')
-    .replaceAll('ö', 'o')
-    .replaceAll('ç', 'c')
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '');
-  return `${prefix}_${slug}_${Date.now()}`;
-}
 
 createRoot(document.getElementById('root')).render(<App />);

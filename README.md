@@ -18,18 +18,18 @@ Proje React + Vite uygulaması olarak çalışıyor. Supabase entegrasyonu artı
   - `public.test_results`
   - `public.program_items`
 - `public.app_states` JSON yedek/fallback olarak korunuyor.
-- Veri değişiklikleri 1500ms debounce ile otomatik olarak Supabase'e yazılıyor.
+- Veri değişiklikleri 1500ms debounce ile normalize Supabase tablolarına otomatik olarak yazılıyor.
 - Profil ekranında manuel `Buluta Kaydet` / `Buluttan Yükle` akışı hâlâ JSON yedek üzerinden mevcut.
-- Kapak görselleri önce Supabase Storage `covers` bucket'ına yüklenmeye çalışılıyor; başarısız olursa base64/data URL olarak saklanıyor.
+- Kapak görselleri kitap eklerken veya kitabı düzenlerken Supabase Storage `covers` bucket'ına yüklenmeye çalışılıyor; başarısız olursa base64/data URL olarak saklanıyor.
 
-Not: Normalize tabloların çalışması için `supabase/normalize_schema.sql` dosyasının Supabase SQL Editor'da çalıştırılmış olması gerekir. Kapak yükleme için `covers` bucket'ı ve ilgili Storage policy'leri gerekir.
+Canlı Supabase projesinde normalize tablolar ve `covers` Storage bucket/policy kurulumu uygulanıp doğrulandı. Kurulumu tekrar oluşturmak için SQL dosyaları `supabase/` altındadır.
 
 ## Özellikler
 
 - Mobil öncelikli panel ekranı.
 - Kitap arşivi, arama ve filtreleme.
 - Kitap ekleme, düzenleme ve silme.
-- Kapak görseli ekleme.
+- Kitap eklerken veya düzenlerken kapak görseli ekleme/değiştirme.
 - Konu ekleme, düzenleme ve silme.
 - Kitap ve konu toplamlarını otomatik yeniden hesaplama.
 - Geçmiş çözümler için toplu başlangıç ilerlemesi.
@@ -93,6 +93,7 @@ Not: Normalize tabloların çalışması için `supabase/normalize_schema.sql` d
 │     ├─ storage.js
 │     └─ supabaseDB.js
 ├─ supabase/
+│  ├─ covers_storage.sql
 │  ├─ kitaparsiv_app_state.sql
 │  └─ normalize_schema.sql
 ├─ sayfa1.html
@@ -166,6 +167,7 @@ SQL dosyaları:
 
 - `supabase/kitaparsiv_app_state.sql`: JSON yedek/fallback tablosu.
 - `supabase/normalize_schema.sql`: normalize uygulama tabloları.
+- `supabase/covers_storage.sql`: `covers` Storage bucket ve RLS policy kurulumu.
 
 Normalize tablo mantığı:
 
@@ -188,7 +190,8 @@ Storage:
 3. Normalize tabloda veri varsa uygulama state'i bu veriden kurulur.
 4. Normalize tablo yoksa veya hata alınırsa kullanıcı bazlı localStorage fallback okunur.
 5. Kullanıcı veri eklediğinde önce localStorage güncellenir.
-6. 1500ms sonra normalize tablolar ve `app_states` JSON yedeği Supabase'e yazılır.
+6. 1500ms sonra normalize tablolar Supabase'e yazılır.
+7. `app_states` sadece Profil ekranındaki manuel `Buluta Kaydet` / `Buluttan Yükle` snapshot yedeği için kullanılır.
 
 ## Google OAuth Ayarları
 
@@ -203,8 +206,8 @@ Google Cloud Console:
 Supabase Dashboard:
 
 - Authentication -> Providers -> Google:
-  - Google provider açılmalı.
-  - Google Client ID ve Client Secret girilmeli.
+  - Google provider açıldı.
+  - Google Client ID ve Client Secret girildi.
 - Authentication -> URL Configuration:
   - Site URL: `http://127.0.0.1:5173`
   - Redirect URLs:
@@ -215,15 +218,16 @@ Supabase Dashboard:
 
 - Normalize şema Supabase Dashboard'da çalıştırılmadıysa otomatik sync hata verir ve uygulama localStorage fallback ile devam eder.
 - `covers` bucket'ı veya Storage policy'leri eksikse kapak görselleri base64 olarak saklanır.
-- `app_states` hâlâ manuel bulut yedeği için tutuluyor; uzun vadede ana veri kaynağı normalize tablolar olmalı.
+- `app_states` manuel bulut yedeği için tutuluyor; otomatik sync ana veri kaynağı olarak normalize tabloları kullanır.
 - Program metinlerinden kitap/konu çıkarımı kural bazlıdır; bazı yazım farkları eşleşmeyebilir.
 - Kodun önemli bir kısmı hâlâ `src/main.jsx` içinde; refactor yapılacaksa davranış korunarak küçük parçalara ayrılmalı.
+- Supabase Auth advisor tarafında leaked password protection uyarısı kalabilir; bu Dashboard'dan açılacak bir Auth ayarıdır.
 
 ## Sonraki İşler
 
-1. Supabase Dashboard'da `normalize_schema.sql` çalıştırıldığını doğrula.
-2. `covers` bucket'ını ve Storage policy'lerini doğrula.
-3. E-posta/şifre login/signup akışını gerçek kullanıcıyla test et.
-4. Google OAuth provider ayarlarını tamamlayıp Google login'i test et.
-5. Kitap ekleme -> otomatik sync -> çıkış/giriş sonrası veri geri yükleme akışını test et.
-6. README ile `data-model.md` arasındaki eski notları daha sonra sadeleştir.
+1. Kitap düzenleme ekranından kapak ekleme/değiştirme akışını gerçek hesapla test et.
+2. Kitap ekleme -> otomatik sync -> çıkış/giriş sonrası veri geri yükleme akışını gerçek veriyle tekrar kontrol et.
+3. Profilde manuel `Buluta Kaydet` / `Buluttan Yükle` snapshot yedeğini yeniden test et.
+4. Supabase Auth Dashboard'da leaked password protection ayarını değerlendirme.
+5. `data-model.md` ve eski prototip notlarını güncel mimariye göre sadeleştirme.
+6. `src/main.jsx` içindeki büyük bileşenleri davranışı bozmadan küçük modüllere ayırma.

@@ -128,7 +128,8 @@ export async function fetchProgramItems(userId) {
 }
 
 export async function replaceProgramItems(userId, items) {
-  await supabase.from('program_items').delete().eq('user_id', userId);
+  const { error: deleteError } = await supabase.from('program_items').delete().eq('user_id', userId);
+  if (deleteError) return { error: deleteError };
   if (!items.length) return { error: null };
   const rows = items.map((item) => ({
     id: item.id,
@@ -159,6 +160,9 @@ export async function loadAllFromDB(userId) {
     fetchProgramItems(userId),
   ]);
 
+  const firstError = booksRes.error || topicsRes.error || resultsRes.error || programRes.error;
+  if (firstError) throw firstError;
+
   // Kitapları JS formatına çevir ve topic'leri içine göm
   const topicsByBook = {};
   (topicsRes.data ?? []).forEach((t) => {
@@ -175,6 +179,19 @@ export async function loadAllFromDB(userId) {
   const programItems = (programRes.data ?? []).map(dbProgramItemToJs);
 
   return { books, testResults, programItems };
+}
+
+export async function clearUserCloudData(userId) {
+  const results = await Promise.all([
+    supabase.from('program_items').delete().eq('user_id', userId),
+    supabase.from('test_results').delete().eq('user_id', userId),
+    supabase.from('topics').delete().eq('user_id', userId),
+    supabase.from('books').delete().eq('user_id', userId),
+    supabase.from('app_states').delete().eq('user_id', userId),
+  ]);
+
+  const firstError = results.find((result) => result.error)?.error;
+  return { error: firstError ?? null };
 }
 
 // ── format converters ─────────────────────────────────────────────────

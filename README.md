@@ -1,83 +1,62 @@
-# KitapArşiv
+# KitapArsiv
 
-KitapArşiv, YKS hazırlığında kullanılan test kitaplarını, konu/test ilerlemesini, koça sorulacak testleri, haftalık ders programından gelen görevleri ve koç gününde götürülecek kitapları takip etmek için geliştirilen mobil öncelikli bir web uygulamasıdır.
+KitapArsiv, YKS hazırlığında kullanılan test kitaplarını, konu/test ilerlemesini, koça sorulacak testleri, haftalık ders programından gelen görevleri ve koç gününde götürülecek kitapları takip etmek için geliştirilen mobil öncelikli bir web uygulamasıdır.
 
-Ana amaç: çok fazla test kitabı taşımak yerine, gerçek arşiv, haftalık program ve işaretlenen testlere göre hangi kitapların gerçekten götürülmesi gerektiğini netleştirmek.
+Ana amaç, çok fazla test kitabı taşımak yerine gerçek arşiv, haftalık program ve işaretlenen testlere göre hangi kitapların gerçekten götürülmesi gerektiğini netleştirmektir.
 
-## Current Status
+## Güncel Durum
 
-Proje şu anda React + Vite uygulaması olarak çalışıyor. Ana veri hâlâ tarayıcıdaki `localStorage` içinde tutuluyor, ancak Supabase entegrasyonunun ilk adımı eklendi:
+Proje React + Vite uygulaması olarak çalışıyor. Supabase entegrasyonu artık ilk JSON yedek aşamasından daha ileri durumda:
 
-- Supabase projesi oluşturuldu: `KitapArsiv`
-- `public.app_states` tablosu oluşturuldu.
-- RLS aktif ve kullanıcılar sadece kendi yedek verilerine erişebiliyor.
-- Profil ekranında e-posta/şifre ile giriş ve kayıt olma akışı var.
-- Giriş yapan kullanıcı yerel verisini Supabase’e JSON yedek olarak kaydedip geri yükleyebiliyor.
+- Giriş zorunlu hale getirildi.
+- Supabase Auth ile Google, e-posta/şifre, kayıt olma ve magic link akışları var.
+- Kullanıcı oturumu `App` seviyesinde yönetiliyor.
+- Her kullanıcı için ayrı localStorage anahtarı kullanılıyor: `kitaparsiv.v1.${userId}`.
+- Normalize Supabase tabloları için kod ve SQL dosyası eklendi:
+  - `public.books`
+  - `public.topics`
+  - `public.test_results`
+  - `public.program_items`
+- `public.app_states` JSON yedek/fallback olarak korunuyor.
+- Veri değişiklikleri 1500ms debounce ile otomatik olarak Supabase'e yazılıyor.
+- Profil ekranında manuel `Buluta Kaydet` / `Buluttan Yükle` akışı hâlâ JSON yedek üzerinden mevcut.
+- Kapak görselleri önce Supabase Storage `covers` bucket'ına yüklenmeye çalışılıyor; başarısız olursa base64/data URL olarak saklanıyor.
 
-Supabase entegrasyonu şu an normalize kitap/konu/test tabloları değil, tek kullanıcıya ait JSON bulut yedeği şeklindedir. Bu, mevcut localStorage veri modelini bozmadan PC/telefon ortak kullanımına geçiş için ilk güvenli adımdır.
+Not: Normalize tabloların çalışması için `supabase/normalize_schema.sql` dosyasının Supabase SQL Editor'da çalıştırılmış olması gerekir. Kapak yükleme için `covers` bucket'ı ve ilgili Storage policy'leri gerekir.
 
-## Features
+## Özellikler
 
 - Mobil öncelikli panel ekranı.
-- Kitap arşivi.
-- Arşivde kitap arama ve filtreleme.
-- Kitap ekleme:
-  - kitap adı
-  - yayın
-  - ders
-  - TYT/AYT
-  - durum
-  - ilk konu
-  - toplam test sayısı
-  - geçmiş çözülmüş test sayısı
-  - kapak görseli
-- Kitap düzenleme ve silme.
+- Kitap arşivi, arama ve filtreleme.
+- Kitap ekleme, düzenleme ve silme.
+- Kapak görseli ekleme.
 - Konu ekleme, düzenleme ve silme.
-- Konu silinirse bağlı test kayıtları da temizlenir.
-- Kitap ve konu toplamları düzenleme/silme sonrası otomatik yeniden hesaplanır.
+- Kitap ve konu toplamlarını otomatik yeniden hesaplama.
 - Geçmiş çözümler için toplu başlangıç ilerlemesi.
-- Test sonucu kaydı:
-  - kitap
-  - konu
-  - test no / test aralığı / esnek kayıt
-  - doğru
-  - yanlış
-  - boş
-  - çözüldü / yanlışlı / koça sor
-  - koç notu
+- Test sonucu ekleme, listeleme, arama, düzenleme ve silme.
 - Atlamalı test takibi:
   - `14` tek test olarak sayılır.
   - `12-14` veya `12/14` aralık olarak sayılır.
   - `3 test` toplu test olarak sayılır.
-  - `karma`, `20 soru`, `deneme analizi` gibi kayıtlar veri olarak tutulur ama test ilerlemesini artırmaz.
-- Test kayıtlarını listeleme, arama, düzenleme ve silme.
-- Kitap detayında konu dağılımı ve ilerleme.
-- Konu kartına tıklayınca popup içinde istatistik gösterimi:
-  - çözülen/kalan test
-  - başlangıç ilerlemesi
-  - takipli test sayısı
-  - doğruluk oranı
-  - koça sor sayısı
-  - doğru/yanlış/boş toplamı
-  - konuya bağlı test kayıtları
+  - `karma`, `20 soru`, `deneme analizi` gibi esnek kayıtlar veri olarak tutulur ama test ilerlemesini artırmaz.
+- Konu kartına tıklayınca popup içinde istatistik gösterimi.
 - Koç günü ekranı:
   - ders programı JSON içe aktarma
   - içe aktarılan programı silme
-  - haftalık programdan gelen görevler
+  - haftalık program görevleri
   - koça sorulacaklar
-  - kesin götür
-  - götürmen iyi olur
-- `ders-programi-taslak` / `sayac-program-editor` JSON formatından `data.tasks` okunur.
-- Program görevleri arşivdeki kitaplarla eşleştirilmeye çalışılır.
-- Eşleşen/eşleşmeyen program görevleri kullanıcıya gösterilir.
+  - kesin götür / götürmen iyi olur önerileri
+- `ders-programi-taslak` / `sayac-program-editor` JSON formatındaki `data.tasks` okunur.
+- Program görevleri arşiv kitaplarıyla eşleştirilmeye çalışılır.
 - Profil ekranı:
-  - local veriyi sıfırlama
-  - Supabase giriş/kayıt
-  - Supabase bulut yedeği kaydetme
-  - Supabase bulut yedeği yükleme
-  - çıkış yapma
+  - kullanıcı bilgisi
+  - sync durumu
+  - buluta kaydet
+  - buluttan yükle
+  - çıkış yap
+  - local ve bulut verisini sıfırlama
 
-## Tech Stack
+## Teknoloji
 
 - React
 - Vite
@@ -85,14 +64,16 @@ Supabase entegrasyonu şu an normalize kitap/konu/test tabloları değil, tek ku
 - localStorage
 - Supabase Auth
 - Supabase Database
+- Supabase Storage
 - `@supabase/supabase-js`
-- Material Symbols ikon fontu
+- Material Symbols
 
-## Project Structure
+## Proje Yapısı
 
 ```txt
 .
 ├─ README.md
+├─ claudeileyaptıklarım.md
 ├─ data-model.md
 ├─ design.md
 ├─ index.html
@@ -104,10 +85,16 @@ Supabase entegrasyonu şu an normalize kitap/konu/test tabloları değil, tek ku
 │  ├─ main.jsx
 │  ├─ styles.css
 │  ├─ supabaseClient.js
-│  └─ data/
-│     └─ sampleData.js
+│  ├─ data/
+│  │  └─ sampleData.js
+│  └─ utils/
+│     ├─ helpers.js
+│     ├─ matching.js
+│     ├─ storage.js
+│     └─ supabaseDB.js
 ├─ supabase/
-│  └─ kitaparsiv_app_state.sql
+│  ├─ kitaparsiv_app_state.sql
+│  └─ normalize_schema.sql
 ├─ sayfa1.html
 ├─ sayfa2.html
 ├─ sayfa3.html
@@ -115,15 +102,9 @@ Supabase entegrasyonu şu an normalize kitap/konu/test tabloları değil, tek ku
 └─ sayfa5.html
 ```
 
-Notlar:
+`sayfa1.html` - `sayfa5.html` eski statik prototip referanslarıdır. Asıl çalışan uygulama `index.html` ve `src/` altındadır.
 
-- `sayfa1.html` - `sayfa5.html` eski statik prototip referanslarıdır.
-- Asıl çalışan React uygulaması `index.html` ve `src/` altındadır.
-- `data-model.md` veri kararlarının kaynak dokümanıdır.
-- `design.md` tasarım dili referansıdır.
-- `supabase/kitaparsiv_app_state.sql` Supabase tarafında uygulanan ilk RLS şemasını içerir.
-
-## Setup
+## Kurulum
 
 Bağımlılıkları kur:
 
@@ -152,27 +133,15 @@ http://127.0.0.1:5173/#coach
 http://127.0.0.1:5173/#profile
 ```
 
-## Available Scripts
+## Komutlar
 
 ```bash
 npm run dev
-```
-
-Vite geliştirme sunucusunu `127.0.0.1` üzerinde başlatır.
-
-```bash
 npm run build
-```
-
-Production build alır.
-
-```bash
 npm run preview
 ```
 
-Vite preview sunucusunu `127.0.0.1` üzerinde başlatır.
-
-## Environment Variables
+## Ortam Değişkenleri
 
 Supabase için `.env.local` gerekir. Örnek dosya: `.env.example`.
 
@@ -181,86 +150,80 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
 ```
 
-`VITE_SUPABASE_PUBLISHABLE_KEY` tarayıcı tarafında kullanılabilen publishable key’dir. Service role key veya gizli anahtar frontend’e konulmamalıdır.
+`VITE_SUPABASE_PUBLISHABLE_KEY` tarayıcı tarafında kullanılır. Service role key veya gizli anahtar frontend'e konulmamalıdır.
 
 `.env.local` değiştirildikten sonra Vite dev server yeniden başlatılmalıdır.
 
 ## Supabase
 
-Oluşturulan proje:
+Proje:
 
 - Ad: `KitapArsiv`
 - Region: `eu-central-1`
 - Project ref: `oatiiyggnejqwxroobpq`
 
-Uygulanan tablo:
+SQL dosyaları:
 
-- `public.app_states`
+- `supabase/kitaparsiv_app_state.sql`: JSON yedek/fallback tablosu.
+- `supabase/normalize_schema.sql`: normalize uygulama tabloları.
 
-Tablo mantığı:
+Normalize tablo mantığı:
 
-- Her kullanıcı için tek satır bulunur.
-- `user_id` alanı `auth.users.id` ile ilişkilidir.
-- `data` alanında kitaplar, konular, test kayıtları ve program görevleri JSON olarak saklanır.
+- Her satır `user_id` ile Supabase Auth kullanıcısına bağlıdır.
+- Primary key yapısı `(id, user_id)` şeklindedir.
 - RLS açıktır.
-- Kullanıcı sadece kendi `user_id` değerine ait satırı okuyabilir/yazabilir.
+- Kullanıcı sadece kendi `user_id` değerine ait satırları okuyup yazabilir.
 
-## Implementation Notes
+Storage:
 
-- İlk açılışta `src/data/sampleData.js` içindeki örnek veriler kullanılır.
-- Kullanıcı kitap, konu, test sonucu veya program JSON’u eklediğinde veriler `kitaparsiv.v1` anahtarıyla localStorage içine yazılır.
-- Supabase’e giriş yapılırsa aynı veri `app_states.data` alanına JSON yedek olarak kaydedilebilir.
-- Supabase’den yükleme yapılırsa buluttaki JSON yedek localStorage verisinin üzerine yazılır.
-- Geçmiş testler tek tek girilmez; kitap/konu eklerken başlangıç ilerlemesi olarak tutulur.
-- Bundan sonra çözülen testler detaylı doğru/yanlış/boş olarak kaydedilir.
-- Test aralığı girilirse ilerleme aralıktaki test sayısı kadar artar.
-- Esnek kayıtlar veri olarak saklanır ama toplam test ilerlemesini artırmaz.
-- `Koça Sor` seçilen sonuçlar koç günü ekranında görünür ve kitap önerilerini etkiler.
-- Kitap kapağı şu an base64/data URL olarak localStorage içinde tutulur.
-- Profildeki `Ornek Verileri Sil` butonu kitapları, test kayıtlarını ve program görevlerini boşaltır.
-- Koç ekranındaki JSON içe aktarma, `sayac-program-editor` dışa aktarımındaki `data.tasks` nesnesini okur.
-- Program görevleri ders/gün anahtarından ve görev metninden kitap, konu ve test bilgisi çıkarılarak saklanır.
+- Kapak görselleri için bucket adı: `covers`.
+- Kod dosyayı `${userId}/${timestamp}.${ext}` yoluna yükler.
+- Bucket yoksa veya policy eksikse uygulama base64 fallback kullanır.
+- Supabase Storage upsert için sadece insert yeterli değildir; select ve update izinleri de gerekir.
 
-## Completed Work
+## Veri Akışı
 
-- Fikir netleştirme: kitap arşivi, test takibi, koç günü ve kesin götür mantığı belirlendi.
-- Statik HTML prototipleri YKS senaryosuna göre Türkçeleştirildi.
-- Statik ekran akışı panel, arşiv, test sonucu, kitap detayı ve koç günü ekranlarına dönüştürüldü.
-- `data-model.md` oluşturuldu.
-- React + Vite uygulama iskeleti kuruldu.
-- localStorage ile gerçek veri girişi eklendi.
-- Ders programı JSON içe aktarma eklendi.
-- Program görevlerini arşiv kitaplarıyla eşleştirme güçlendirildi.
-- İçe aktarılan programı silme eklendi.
-- Kitap ve konu düzenleme/silme eklendi.
-- Arşiv arama/filtreleme eklendi.
-- Test kayıtlarını düzenleme/silme eklendi.
-- Atlamalı/esnek test takibi eklendi.
-- Konu istatistik popup’ı eklendi.
-- Supabase projesi oluşturuldu.
-- Supabase Auth giriş/kayıt ekranı eklendi.
-- Supabase JSON bulut yedekleme/yükleme eklendi.
+1. Kullanıcı giriş yapar.
+2. `loadAllFromDB(userId)` normalize Supabase tablolarını okumayı dener.
+3. Normalize tabloda veri varsa uygulama state'i bu veriden kurulur.
+4. Normalize tablo yoksa veya hata alınırsa kullanıcı bazlı localStorage fallback okunur.
+5. Kullanıcı veri eklediğinde önce localStorage güncellenir.
+6. 1500ms sonra normalize tablolar ve `app_states` JSON yedeği Supabase'e yazılır.
 
-## Next Steps
+## Google OAuth Ayarları
 
-Önerilen sıradaki işler:
+Google Cloud Console:
 
-1. Supabase login/signup akışını gerçek e-posta ile tarayıcıda test etmek.
-2. Supabase Auth ayarlarında redirect URL’leri kontrol etmek.
-3. Buluta kaydet / buluttan yükle akışını gerçek kullanıcıyla doğrulamak.
-4. Kapak görsellerini localStorage/base64 yerine Supabase Storage’a taşımak.
-5. `app_states` JSON yedeğinden normalize tablolara geçiş planlamak:
-   - books
-   - topics
-   - test_results
-   - program_items
-6. Ders programı uygulamasıyla dosya içe aktarma dışında daha doğrudan entegrasyon seçeneği değerlendirmek.
+- Authorized JavaScript origins:
+  - `http://127.0.0.1:5173`
+  - `http://localhost:5173`
+- Authorized redirect URI:
+  - `https://oatiiyggnejqwxroobpq.supabase.co/auth/v1/callback`
 
-## Known Risks
+Supabase Dashboard:
 
-- localStorage hâlâ ana çalışma katmanıdır; Supabase şu an otomatik canlı senkron değil, manuel yedekleme/yükleme mantığıdır.
-- Supabase’den yükleme local verinin üzerine yazar; bu yüzden kullanıcıdan onay alınır.
-- Kapak fotoğrafları localStorage içinde base64 olarak tutulduğu için büyük görseller uzun vadede sorun çıkarabilir.
-- Supabase Storage henüz kullanılmıyor.
-- Program metinlerinden kitap adı/konu çıkarımı hâlâ kural bazlıdır; bazı yazım farkları eşleşmeyebilir.
-- README `.env.local` değerlerini bilinçli olarak içermez.
+- Authentication -> Providers -> Google:
+  - Google provider açılmalı.
+  - Google Client ID ve Client Secret girilmeli.
+- Authentication -> URL Configuration:
+  - Site URL: `http://127.0.0.1:5173`
+  - Redirect URLs:
+    - `http://127.0.0.1:5173`
+    - `http://localhost:5173`
+
+## Bilinen Riskler
+
+- Normalize şema Supabase Dashboard'da çalıştırılmadıysa otomatik sync hata verir ve uygulama localStorage fallback ile devam eder.
+- `covers` bucket'ı veya Storage policy'leri eksikse kapak görselleri base64 olarak saklanır.
+- `app_states` hâlâ manuel bulut yedeği için tutuluyor; uzun vadede ana veri kaynağı normalize tablolar olmalı.
+- Program metinlerinden kitap/konu çıkarımı kural bazlıdır; bazı yazım farkları eşleşmeyebilir.
+- Kodun önemli bir kısmı hâlâ `src/main.jsx` içinde; refactor yapılacaksa davranış korunarak küçük parçalara ayrılmalı.
+
+## Sonraki İşler
+
+1. Supabase Dashboard'da `normalize_schema.sql` çalıştırıldığını doğrula.
+2. `covers` bucket'ını ve Storage policy'lerini doğrula.
+3. E-posta/şifre login/signup akışını gerçek kullanıcıyla test et.
+4. Google OAuth provider ayarlarını tamamlayıp Google login'i test et.
+5. Kitap ekleme -> otomatik sync -> çıkış/giriş sonrası veri geri yükleme akışını test et.
+6. README ile `data-model.md` arasındaki eski notları daha sonra sadeleştir.

@@ -11,6 +11,7 @@ import {
 import { getBringRecommendations, parseProgramExport } from './utils/matching';
 import {
   loadAllFromDB,
+  clearUserCloudData,
   upsertBook, deleteBook as dbDeleteBook,
   upsertTopic, deleteTopic as dbDeleteTopic,
   upsertTestResult, deleteTestResult as dbDeleteTestResult,
@@ -263,17 +264,22 @@ function App() {
   );
 
   const loadUserData = useCallback(async (userId) => {
-    const { books, testResults, programItems } = await loadAllFromDB(userId);
-    if (books.length > 0) {
-      const fresh = { books, testResults, programItems };
-      setAppData(fresh);
-      setSelectedBookId(books[0]?.id);
-      saveStoredState(userId, books, testResults, programItems);
-    } else {
-      const stored = loadStoredState(userId);
-      setAppData(stored);
-      setSelectedBookId(stored.books[0]?.id);
+    try {
+      const { books, testResults, programItems } = await loadAllFromDB(userId);
+      if (books.length > 0) {
+        const fresh = { books, testResults, programItems };
+        setAppData(fresh);
+        setSelectedBookId(books[0]?.id);
+        saveStoredState(userId, books, testResults, programItems);
+        return;
+      }
+    } catch {
+      setSyncStatus('error');
     }
+
+    const stored = loadStoredState(userId);
+    setAppData(stored);
+    setSelectedBookId(stored.books[0]?.id);
   }, []);
 
   useEffect(() => {
@@ -315,21 +321,20 @@ function App() {
     try {
       // Normalize tablolara yaz
       for (const book of books) {
-        await upsertBook(userId, book);
+        const bookResult = await upsertBook(userId, book);
+        if (bookResult.error) throw bookResult.error;
         for (const topic of book.topics) {
-          await upsertTopic(userId, book.id, topic);
+          const topicResult = await upsertTopic(userId, book.id, topic);
+          if (topicResult.error) throw topicResult.error;
         }
       }
       for (const result of testResults) {
-        await upsertTestResult(userId, result);
+        const resultResponse = await upsertTestResult(userId, result);
+        if (resultResponse.error) throw resultResponse.error;
       }
-      await replaceProgramItems(userId, programItems);
+      const programResult = await replaceProgramItems(userId, programItems);
+      if (programResult.error) throw programResult.error;
 
-      // JSON blob yedeği de tut (fallback)
-      await supabase.from('app_states').upsert(
-        { user_id: userId, data: { version: 1, savedAt: new Date().toISOString(), books, testResults, programItems } },
-        { onConflict: 'user_id' },
-      );
       setSyncStatus('synced');
     } catch {
       setSyncStatus('error');
@@ -409,6 +414,7 @@ function App() {
         subject: form.subject,
         status: form.status,
         isActiveRotation: form.status === 'aktif',
+        coverImage: form.coverImage ?? book.coverImage ?? '',
       });
     });
 
@@ -616,11 +622,13 @@ function App() {
     dbDeleteTestResult(session.user.id, resultId);
   };
 
-  const resetData = () => {
+  const resetData = async () => {
     const fresh = emptyState();
     localStorage.removeItem(storageKey(session.user.id));
     setAppData(fresh);
     setSelectedBookId(undefined);
+    const { error } = await clearUserCloudData(session.user.id);
+    setSyncStatus(error ? 'error' : 'synced');
     return fresh;
   };
 
@@ -1301,7 +1309,7 @@ function TestResultRow({ book, onDelete, onUpdate, result }) {
   );
 }
 
-function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onUpdateBook, onUpdateTopic, testResults }) {
+function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onUpdateBook, onUpdateTopic, testResults, userId }) {
   const [showBookEditor, setShowBookEditor] = useState(false);
   const [showTopicForm, setShowTopicForm] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState(null);
@@ -1337,6 +1345,7 @@ function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onUpdateBo
             onUpdateBook(book.id, form);
             setShowBookEditor(false);
           }}
+          userId={userId}
         />
       )}
       <section className="section topic-management">
@@ -1379,13 +1388,14 @@ function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onUpdateBo
   );
 }
 
-function BookEditForm({ book, onCancel, onSave }) {
+function BookEditForm({ book, onCancel, onSave, userId }) {
   const [form, setForm] = useState({
     name: book.name,
     publisher: book.publisher,
     examType: book.examType,
     subject: book.subject,
     status: book.status,
+    coverImage: book.coverImage ?? '',
   });
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -1433,6 +1443,7 @@ function BookEditForm({ book, onCancel, onSave }) {
           <option value="bitti">Bitti</option>
         </select>
       </label>
+      <ImagePicker userId={userId} value={form.coverImage} onChange={(image) => update('coverImage', image)} />
       <button className="primary-button" type="submit">Kitabi Kaydet</button>
     </form>
   );
@@ -1596,8 +1607,8 @@ function CoachDay({ books, onClearProgram, onImportProgram, programItems, recomm
 function Profile({ books, onReset, programItems, testResults }) {
   const [resetMessage, setResetMessage] = useState('');
 
-  const handleReset = () => {
-    const fresh = onReset();
+  const handleReset = async () => {
+    const fresh = await onReset();
     setResetMessage(`Örnek veriler silindi: ${fresh.books.length} kitap, ${fresh.testResults.length} test kaydı, ${fresh.programItems.length} program görevi.`);
   };
 
@@ -1620,8 +1631,8 @@ function SupabaseProfile({ books, onImportCloudData, onReset, programItems, sess
   const [resetMessage, setResetMessage] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
 
-  const handleReset = () => {
-    const fresh = onReset();
+  const handleReset = async () => {
+    const fresh = await onReset();
     setResetMessage(`Veriler sıfırlandı: ${fresh.books.length} kitap, ${fresh.testResults.length} test kaydı, ${fresh.programItems.length} program görevi.`);
   };
 

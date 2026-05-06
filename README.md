@@ -17,6 +17,8 @@ Proje React + Vite uygulaması olarak çalışıyor. Supabase entegrasyonu artı
   - `public.topics`
   - `public.test_results`
   - `public.program_items`
+  - `public.program_archives`
+  - `public.program_match_rules`
 - `public.app_states` JSON yedek/fallback olarak korunuyor.
 - Veri değişiklikleri 1500ms debounce ile normalize Supabase tablolarına otomatik olarak yazılıyor.
 - Profil ekranında manuel `Buluta Kaydet` / `Buluttan Yükle` akışı hâlâ JSON yedek üzerinden mevcut.
@@ -27,10 +29,21 @@ Canlı Supabase projesinde normalize tablolar ve `covers` Storage bucket/policy 
 ## Özellikler
 
 - Mobil öncelikli panel ekranı.
+- Genel Özet sekmesi:
+  - bütün arşivde toplam kitap, toplam test, çözülen test ve kalan test
+  - ders, tür, katalog, kitap yapısı veya durum bazlı kırılım
+  - kırılım içinde arama, sıralama ve sadece aktif kitap filtresi
 - Kitap arşivi, arama ve filtreleme.
+- Arşivde kitapları çözülen test sayısına göre çoktan aza sıralama.
 - Kitap ekleme, düzenleme ve silme.
+- Arşiv filtreleri sınıf, sınav türü, ders, set ve fasikül kataloglarına göre genişletildi.
+- Kitap eklerken/düzenlerken katalog, kitap yapısı ve set/fasikül katalog adı tutulur.
+- Soru Bankası ve Konu Anlatımlı Soru Bankası katalogları ayrı takip edilir.
+- Paragraf, Geometri ve Problem katalogları ayrı takip edilir; eski kitaplarda ad/konu bilgisinden bu kataloglar sezilerek özet ve filtrelerde ayrıştırılır.
 - Kitap eklerken veya düzenlerken kapak görseli ekleme/değiştirme.
 - Konu ekleme, düzenleme ve silme.
+- Kitap detayında konu dağılımını JSON dışa aktarma ve JSON içe aktarma.
+- AI araçları için konu dağılımı JSON şeması ve master prompt dosyası: `konu-dagilimi-json-master-prompt.md`.
 - Kitap ve konu toplamlarını otomatik yeniden hesaplama.
 - Geçmiş çözümler için toplu başlangıç ilerlemesi.
 - Test sonucu ekleme, listeleme, arama, düzenleme ve silme.
@@ -44,15 +57,25 @@ Canlı Supabase projesinde normalize tablolar ve `covers` Storage bucket/policy 
   - ders programı JSON içe aktarma
   - içe aktarılan programı silme
   - haftalık program görevleri
+  - içe aktarılan haftalık program geçmişi
+  - geçmiş programı tekrar aktif yapma
+  - geçmiş programı silme
+  - geçmiş programlarda görev, gün, kitap ve konu dağılım analizi
+  - program görevini arşivdeki kitapla elle eşleştirme
+  - elle yapılan eşleşmeleri sonraki importlarda hatırlama
   - koça sorulacaklar
   - kesin götür / götürmen iyi olur önerileri
 - `ders-programi-taslak` / `sayac-program-editor` JSON formatındaki `data.tasks` okunur.
-- Program görevleri arşiv kitaplarıyla eşleştirilmeye çalışılır.
+- Program görevleri arşiv kitaplarıyla otomatik eşleştirilmeye çalışılır; gerekirse kullanıcı elle düzeltebilir.
 - Profil ekranı:
   - kullanıcı bilgisi
+  - yayın kontrolü / veri sağlığı
+  - kitap-konu-test tutarlılık bulguları
   - sync durumu
   - buluta kaydet
   - buluttan yükle
+  - kitaplık arşivini JSON dışa aktarma
+  - kitaplık arşivini JSON içe aktarma
   - çıkış yap
   - local ve bulut verisini sıfırlama
 
@@ -129,6 +152,7 @@ Kullanışlı hash adresleri:
 
 ```txt
 http://127.0.0.1:5173/#library
+http://127.0.0.1:5173/#summary
 http://127.0.0.1:5173/#add
 http://127.0.0.1:5173/#coach
 http://127.0.0.1:5173/#profile
@@ -167,6 +191,9 @@ SQL dosyaları:
 
 - `supabase/kitaparsiv_app_state.sql`: JSON yedek/fallback tablosu.
 - `supabase/normalize_schema.sql`: normalize uygulama tabloları.
+- `supabase/program_archives.sql`: haftalık koç programı geçmiş tablosu.
+- `supabase/program_match_rules.sql`: program-kitap eşleştirme hafızası tablosu.
+- `supabase/book_catalog_fields.sql`: kitap katalog, set ve fasikül alanları.
 - `supabase/covers_storage.sql`: `covers` Storage bucket ve RLS policy kurulumu.
 
 Normalize tablo mantığı:
@@ -191,7 +218,10 @@ Storage:
 4. Normalize tablo yoksa veya hata alınırsa kullanıcı bazlı localStorage fallback okunur.
 5. Kullanıcı veri eklediğinde önce localStorage güncellenir.
 6. 1500ms sonra normalize tablolar Supabase'e yazılır.
-7. `app_states` sadece Profil ekranındaki manuel `Buluta Kaydet` / `Buluttan Yükle` snapshot yedeği için kullanılır.
+7. Ders programı JSON içe aktarılınca aktif `program_items` güncellenir ve aynı içerik `program_archives` geçmişine kaydedilir.
+8. Program satırında elle kitap eşleştirilirse `program_match_rules` içine kural olarak kaydedilir.
+9. Sonraki JSON importlarında önce manuel eşleşme kuralları, sonra otomatik alias/skor eşleştirmesi uygulanır.
+10. `app_states` sadece Profil ekranındaki manuel `Buluta Kaydet` / `Buluttan Yükle` snapshot yedeği için kullanılır.
 
 ## Google OAuth Ayarları
 
@@ -216,7 +246,7 @@ Supabase Dashboard:
 
 ## Bilinen Riskler
 
-- Normalize şema Supabase Dashboard'da çalıştırılmadıysa otomatik sync hata verir ve uygulama localStorage fallback ile devam eder.
+- Normalize şema, `program_archives`, `program_match_rules` ve kitap katalog kolonları Supabase Dashboard'da çalıştırılmadıysa otomatik sync hata verir ve uygulama localStorage fallback ile devam eder.
 - `covers` bucket'ı veya Storage policy'leri eksikse kapak görselleri base64 olarak saklanır.
 - `app_states` manuel bulut yedeği için tutuluyor; otomatik sync ana veri kaynağı olarak normalize tabloları kullanır.
 - Program metinlerinden kitap/konu çıkarımı kural bazlıdır; bazı yazım farkları eşleşmeyebilir.

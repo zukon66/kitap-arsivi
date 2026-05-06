@@ -9,6 +9,7 @@ import {
   topicStatusFromCounts, topicStatusLabel, bookName,
 } from './utils/helpers';
 import { getBringRecommendations, parseProgramExport } from './utils/matching';
+import { books as sampleBooks, programItems as sampleProgramItems, testResults as sampleTestResults } from './data/sampleData';
 import {
   loadAllFromDB,
   clearUserCloudData,
@@ -16,21 +17,56 @@ import {
   upsertTopic, deleteTopic as dbDeleteTopic,
   upsertTestResult, deleteTestResult as dbDeleteTestResult,
   replaceProgramItems,
+  replaceProgramArchives,
+  replaceProgramMatchRules,
 } from './utils/supabaseDB';
+
+const DEMO_SESSION_KEY = 'kitaparsiv.demoSession';
+const DEMO_USER_ID = 'demo-user-codex';
+const DEMO_EMAIL = 'codex.demo@kitaparsiv.test';
+const THEME_KEY = 'kitaparsiv.theme';
+const TOPIC_DISTRIBUTION_SCHEMA_TYPE = 'kitaparsiv-topic-distribution';
+const TOPIC_DISTRIBUTION_SCHEMA_VERSION = 1;
 
 const navItems = [
   { id: 'dashboard', label: 'Panel', icon: 'dashboard' },
+  { id: 'summary', label: 'Özet', icon: 'analytics' },
   { id: 'library', label: 'Arşiv', icon: 'auto_stories' },
   { id: 'add', label: 'Hızlı Ekle', icon: 'add_circle' },
   { id: 'coach', label: 'Koç', icon: 'psychology' },
   { id: 'profile', label: 'Profil', icon: 'person' },
 ];
 
+const summaryGroupOptions = [
+  { id: 'subject', label: 'Ders' },
+  { id: 'examType', label: 'Tür' },
+  { id: 'catalog', label: 'Katalog' },
+  { id: 'bookFormat', label: 'Yapı' },
+  { id: 'status', label: 'Durum' },
+];
+
+const summarySortOptions = [
+  { id: 'totalTests', label: 'Toplam Test' },
+  { id: 'solvedTests', label: 'Çözülen Test' },
+  { id: 'bookCount', label: 'Kitap Sayısı' },
+  { id: 'progress', label: 'İlerleme' },
+];
+
+const subjectOptions = ['Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Paragraf', 'Türkçe', 'Edebiyat', 'Coğrafya', 'Tarih', 'Geometri', 'Fen', 'Sosyal'];
+const examTypeOptions = ['TYT', 'AYT', 'TYT-AYT', '11. Sınıf', '12. Sınıf'];
+const catalogOptions = ['Genel', 'Soru Bankası', 'Konu Anlatımlı Soru Bankası', 'TYT', 'AYT', '11. Sınıf', '12. Sınıf', 'Paragraf', 'Geometri', 'Problem', 'Set', 'Fasikül', 'Deneme', 'Konu Anlatım'];
+const bookFormatOptions = ['Tek Kitap', 'Set', 'Fasikül'];
+const libraryFilters = ['Tümü', 'Soru Bankası', 'Konu Anlatımlı Soru Bankası', '11. Sınıf', '12. Sınıf', 'TYT', 'AYT', 'Matematik', 'Problem', 'Geometri', 'Fizik', 'Kimya', 'Biyoloji', 'Paragraf', 'Edebiyat', 'Coğrafya', 'Tarih', 'Türkçe', 'Aktif', 'Set', 'Fasikül'];
+const inferredCatalogLabels = ['Paragraf', 'Geometri', 'Problem'];
+
 const emptyBookForm = {
   name: '',
   publisher: '',
   examType: 'TYT',
   subject: 'Matematik',
+  catalog: 'Genel',
+  bookFormat: 'Tek Kitap',
+  setName: '',
   status: 'aktif',
   topicName: '',
   topicTotalTests: '',
@@ -55,6 +91,134 @@ function Icon({ name, filled = false }) {
       {name}
     </span>
   );
+}
+
+function getBookEffectiveCatalog(book) {
+  if (book.catalog && book.catalog !== 'Genel') return book.catalog;
+
+  const subject = normalizeText(book.subject ?? '');
+  const haystack = normalizeText([
+    book.name,
+    book.publisher,
+    book.subject,
+    book.examType,
+    book.setName,
+    ...(book.topics ?? []).map((topic) => topic.name),
+  ].filter(Boolean).join(' '));
+
+  if (subject === 'paragraf' || haystack.includes('paragraf')) return 'Paragraf';
+  if (
+    subject === 'geometri'
+    || haystack.includes('geometri')
+    || haystack.includes('cember')
+    || haystack.includes('daire')
+    || haystack.includes('analitik')
+    || haystack.includes('ucgen')
+  ) {
+    return 'Geometri';
+  }
+  if (haystack.includes('problem')) return 'Problem';
+
+  return book.catalog || 'Genel';
+}
+
+function getBookSummaryGroupValue(book, groupBy) {
+  if (groupBy === 'status') return statusLabel(book.status);
+  if (groupBy === 'catalog') return getBookEffectiveCatalog(book);
+  if (groupBy === 'subject') {
+    const effectiveCatalog = getBookEffectiveCatalog(book);
+    if (book.subject === 'Matematik' && inferredCatalogLabels.includes(effectiveCatalog)) {
+      return `Matematik / ${effectiveCatalog}`;
+    }
+  }
+  return book[groupBy];
+}
+
+function safeFilePart(value) {
+  return normalizeText(value || 'kitap')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'kitap';
+}
+
+function createTopicDistributionExport(book) {
+  return {
+    type: TOPIC_DISTRIBUTION_SCHEMA_TYPE,
+    version: TOPIC_DISTRIBUTION_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    book: {
+      name: book.name,
+      publisher: book.publisher,
+      examType: book.examType,
+      subject: book.subject,
+      catalog: getBookEffectiveCatalog(book),
+    },
+    topics: (book.topics ?? []).map((topic, index) => ({
+      order: index + 1,
+      id: topic.id,
+      name: topic.name,
+      totalTests: Number(topic.totalTests) || 0,
+      solvedTests: Number(topic.solvedTests) || 0,
+      detail: topic.detail ?? '',
+    })),
+  };
+}
+
+function getTopicArrayFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.topics)) return payload.topics;
+  if (Array.isArray(payload?.data?.topics)) return payload.data.topics;
+  return null;
+}
+
+function normalizeImportedTopic(rawTopic, index, bookName) {
+  const name = String(
+    rawTopic?.name
+    ?? rawTopic?.konu
+    ?? rawTopic?.title
+    ?? rawTopic?.baslik
+    ?? '',
+  ).trim();
+  if (!name) return null;
+
+  const totalTests = Math.max(0, Number(
+    rawTopic?.totalTests
+    ?? rawTopic?.testCount
+    ?? rawTopic?.tests
+    ?? rawTopic?.testSayisi
+    ?? rawTopic?.toplamTest
+    ?? 0,
+  ) || 0);
+  const solvedTests = clampNumber(Number(rawTopic?.solvedTests ?? rawTopic?.cozulenTest ?? 0) || 0, 0, totalTests);
+  const detail = String(rawTopic?.detail ?? rawTopic?.note ?? rawTopic?.not ?? '').trim();
+
+  return {
+    id: rawTopic?.id ? String(rawTopic.id) : createId('topic', `${bookName}_${index + 1}_${name}`),
+    name,
+    totalTests,
+    solvedTests,
+    initialSolvedTests: solvedTests,
+    trackedSolvedTests: 0,
+    status: topicStatusFromCounts(solvedTests, totalTests),
+    detail: detail || (solvedTests > 0 ? 'içe aktarılan başlangıç ilerlemesi' : 'içe aktarılan konu dağılımı'),
+  };
+}
+
+function parseTopicDistributionImport(payload, bookName) {
+  const rawTopics = getTopicArrayFromPayload(payload);
+  if (!rawTopics) {
+    throw new Error('Konu dağılımı JSON içinde topics dizisi bulunamadı.');
+  }
+
+  const topics = rawTopics
+    .map((topic, index) => normalizeImportedTopic(topic, index, bookName))
+    .filter(Boolean);
+
+  if (topics.length === 0) {
+    throw new Error('İçe aktarılacak geçerli konu bulunamadı.');
+  }
+
+  return topics;
 }
 
 function getInitialPage() {
@@ -87,7 +251,31 @@ function GoogleIcon() {
   );
 }
 
-function LoginScreen() {
+function createDemoSession() {
+  return {
+    isDemo: true,
+    user: {
+      id: DEMO_USER_ID,
+      email: DEMO_EMAIL,
+    },
+  };
+}
+
+function isDemoSession(session) {
+  return Boolean(session?.isDemo || session?.user?.id === DEMO_USER_ID);
+}
+
+function createDemoState() {
+  return {
+    books: sampleBooks,
+    matchRules: [],
+    programItems: sampleProgramItems,
+    programArchives: [],
+    testResults: sampleTestResults,
+  };
+}
+
+function LoginScreen({ onDemoLogin }) {
   const [authMode, setAuthMode] = useState('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -239,6 +427,10 @@ function LoginScreen() {
             <button className="text-button" onClick={sendMagicLink} type="button">
               Şifresiz magic link gönder
             </button>
+
+            <button className="secondary-button full-width" onClick={onDemoLogin} type="button">
+              Demo Hesapla Gir
+            </button>
           </>
         )}
 
@@ -255,6 +447,9 @@ function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(Boolean(isSupabaseConfigured));
   const [syncStatus, setSyncStatus] = useState(null); // null | 'syncing' | 'synced' | 'error'
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'light');
+  const activeUserIdRef = useRef(null);
   const syncTimer = useRef(null);
 
   const selectedBook = appData.books.find((book) => book.id === selectedBookId) ?? appData.books[0];
@@ -265,44 +460,96 @@ function App() {
 
   const loadUserData = useCallback(async (userId) => {
     try {
-      const { books, testResults, programItems } = await loadAllFromDB(userId);
-      if (books.length > 0) {
-        const fresh = { books, testResults, programItems };
+      const { books, testResults, programItems, programArchives, matchRules } = await loadAllFromDB(userId);
+      if (activeUserIdRef.current !== userId) return;
+      if (books.length > 0 || testResults.length > 0 || programItems.length > 0 || programArchives.length > 0 || matchRules.length > 0) {
+        const fresh = { books, testResults, programItems, programArchives, matchRules };
         setAppData(fresh);
         setSelectedBookId(books[0]?.id);
-        saveStoredState(userId, books, testResults, programItems);
+        setLastSavedAt(null);
+        saveStoredState(userId, books, testResults, programItems, programArchives, matchRules);
         return;
       }
     } catch {
+      if (activeUserIdRef.current !== userId) return;
       setSyncStatus('error');
     }
 
+    if (activeUserIdRef.current !== userId) return;
     const stored = loadStoredState(userId);
     setAppData(stored);
     setSelectedBookId(stored.books[0]?.id);
+    setLastSavedAt(null);
+  }, []);
+
+  const loadDemoData = useCallback(() => {
+    activeUserIdRef.current = DEMO_USER_ID;
+    const stored = loadStoredState(DEMO_USER_ID);
+    const fresh = stored.books.length > 0 ? stored : createDemoState();
+    setAppData(fresh);
+    setSelectedBookId(fresh.books[0]?.id);
+    setLastSavedAt(null);
+    saveStoredState(
+      DEMO_USER_ID,
+      fresh.books,
+      fresh.testResults,
+      fresh.programItems,
+      fresh.programArchives,
+      fresh.matchRules,
+    );
   }, []);
 
   useEffect(() => {
+    const wantsDemo = new URLSearchParams(window.location.search).get('demo') === '1';
+    if (wantsDemo || localStorage.getItem(DEMO_SESSION_KEY) === '1') {
+      localStorage.setItem(DEMO_SESSION_KEY, '1');
+      setSession(createDemoSession());
+      setAuthLoading(false);
+      loadDemoData();
+      return;
+    }
+
     if (!supabase) return;
     supabase.auth.getSession().then(({ data }) => {
       const sess = data.session ?? null;
       setSession(sess);
       setAuthLoading(false);
-      if (sess?.user?.id) loadUserData(sess.user.id);
+      if (sess?.user?.id) {
+        activeUserIdRef.current = sess.user.id;
+        setAppData(emptyState());
+        setSelectedBookId(undefined);
+        setLastSavedAt(null);
+        setSyncStatus(null);
+        loadUserData(sess.user.id);
+      } else {
+        activeUserIdRef.current = null;
+      }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       const sess = nextSession ?? null;
       setSession(sess);
       setAuthLoading(false);
+      if (syncTimer.current) {
+        clearTimeout(syncTimer.current);
+        syncTimer.current = null;
+      }
       if (sess?.user?.id) {
-        loadUserData(sess.user.id);
-      } else {
+        activeUserIdRef.current = sess.user.id;
         setAppData(emptyState());
         setSelectedBookId(undefined);
+        setLastSavedAt(null);
+        setSyncStatus(null);
+        loadUserData(sess.user.id);
+      } else {
+        activeUserIdRef.current = null;
+        setAppData(emptyState());
+        setSelectedBookId(undefined);
+        setLastSavedAt(null);
+        setSyncStatus(null);
       }
     });
     return () => listener.subscription.unsubscribe();
-  }, [loadUserData]);
+  }, [loadDemoData, loadUserData]);
 
   useEffect(() => {
     const syncPageFromHash = () => setPage(getInitialPage());
@@ -310,12 +557,43 @@ function App() {
     return () => window.removeEventListener('hashchange', syncPageFromHash);
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
   const navigate = (nextPage) => {
     setPage(nextPage);
     window.location.hash = nextPage;
   };
 
-  const autoSync = useCallback(async (userId, books, testResults, programItems) => {
+  const toggleTheme = () => {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+  };
+
+  const startDemoSession = () => {
+    localStorage.setItem(DEMO_SESSION_KEY, '1');
+    activeUserIdRef.current = DEMO_USER_ID;
+    setSession(createDemoSession());
+    setAuthLoading(false);
+    loadDemoData();
+  };
+
+  const signOutSession = async () => {
+    if (isDemoSession(session)) {
+      localStorage.removeItem(DEMO_SESSION_KEY);
+      activeUserIdRef.current = null;
+      setSession(null);
+      setAppData(emptyState());
+      setSelectedBookId(undefined);
+      setLastSavedAt(null);
+      setSyncStatus(null);
+      return;
+    }
+    if (supabase) await supabase.auth.signOut();
+  };
+
+  const autoSync = useCallback(async (userId, books, testResults, programItems, programArchives, matchRules) => {
     if (!supabase || !userId) return;
     setSyncStatus('syncing');
     try {
@@ -334,6 +612,10 @@ function App() {
       }
       const programResult = await replaceProgramItems(userId, programItems);
       if (programResult.error) throw programResult.error;
+      const archiveResult = await replaceProgramArchives(userId, programArchives);
+      if (archiveResult.error) throw archiveResult.error;
+      const rulesResult = await replaceProgramMatchRules(userId, matchRules);
+      if (rulesResult.error) throw rulesResult.error;
 
       setSyncStatus('synced');
     } catch {
@@ -341,13 +623,30 @@ function App() {
     }
   }, []);
 
-  const updateData = (nextBooks, nextResults = appData.testResults, nextProgramItems = appData.programItems) => {
-    setAppData({ books: nextBooks, programItems: nextProgramItems, testResults: nextResults });
-    saveStoredState(session.user.id, nextBooks, nextResults, nextProgramItems);
+  const updateData = (
+    nextBooks,
+    nextResults = appData.testResults,
+    nextProgramItems = appData.programItems,
+    nextProgramArchives = appData.programArchives,
+    nextMatchRules = appData.matchRules,
+  ) => {
+    setAppData({
+      books: nextBooks,
+      matchRules: nextMatchRules,
+      programItems: nextProgramItems,
+      programArchives: nextProgramArchives,
+      testResults: nextResults,
+    });
+    saveStoredState(session.user.id, nextBooks, nextResults, nextProgramItems, nextProgramArchives, nextMatchRules);
+    setLastSavedAt(new Date().toISOString());
+    if (isDemoSession(session)) {
+      setSyncStatus('synced');
+      return;
+    }
     if (syncTimer.current) clearTimeout(syncTimer.current);
     setSyncStatus('syncing');
     syncTimer.current = setTimeout(() => {
-      autoSync(session.user.id, nextBooks, nextResults, nextProgramItems);
+      autoSync(session.user.id, nextBooks, nextResults, nextProgramItems, nextProgramArchives, nextMatchRules);
     }, 1500);
   };
 
@@ -361,6 +660,9 @@ function App() {
       publisher: form.publisher.trim() || 'Yayın bilgisi yok',
       examType: form.examType,
       subject: form.subject,
+      catalog: form.catalog,
+      bookFormat: form.bookFormat,
+      setName: form.setName.trim(),
       status: form.status,
       isActiveRotation: form.status === 'aktif',
       totalTests,
@@ -412,6 +714,9 @@ function App() {
         publisher: form.publisher.trim() || 'Yayin bilgisi yok',
         examType: form.examType,
         subject: form.subject,
+        catalog: form.catalog,
+        bookFormat: form.bookFormat,
+        setName: form.setName.trim(),
         status: form.status,
         isActiveRotation: form.status === 'aktif',
         coverImage: form.coverImage ?? book.coverImage ?? '',
@@ -468,6 +773,16 @@ function App() {
     });
 
     updateData(nextBooks);
+  };
+
+  const importBookTopics = (bookId, topics) => {
+    const nextBooks = appData.books.map((book) => {
+      if (book.id !== bookId) return book;
+      return recalculateBookTotals({ ...book, topics });
+    });
+    const nextResults = appData.testResults.filter((result) => result.bookId !== bookId);
+
+    updateData(nextBooks, nextResults);
   };
 
   const deleteTopic = (bookId, topicId) => {
@@ -627,6 +942,11 @@ function App() {
     localStorage.removeItem(storageKey(session.user.id));
     setAppData(fresh);
     setSelectedBookId(undefined);
+    setLastSavedAt(new Date().toISOString());
+    if (isDemoSession(session)) {
+      setSyncStatus('synced');
+      return fresh;
+    }
     const { error } = await clearUserCloudData(session.user.id);
     setSyncStatus(error ? 'error' : 'synced');
     return fresh;
@@ -636,19 +956,115 @@ function App() {
     const nextBooks = Array.isArray(cloudData?.books) ? cloudData.books : [];
     const nextResults = Array.isArray(cloudData?.testResults) ? cloudData.testResults : [];
     const nextProgramItems = Array.isArray(cloudData?.programItems) ? cloudData.programItems : [];
+    const nextProgramArchives = Array.isArray(cloudData?.programArchives) ? cloudData.programArchives : [];
+    const nextMatchRules = Array.isArray(cloudData?.matchRules) ? cloudData.matchRules : [];
 
-    updateData(nextBooks, nextResults, nextProgramItems);
+    updateData(nextBooks, nextResults, nextProgramItems, nextProgramArchives, nextMatchRules);
     setSelectedBookId(nextBooks[0]?.id);
-    return { books: nextBooks, testResults: nextResults, programItems: nextProgramItems };
+    return {
+      books: nextBooks,
+      testResults: nextResults,
+      programItems: nextProgramItems,
+      programArchives: nextProgramArchives,
+      matchRules: nextMatchRules,
+    };
   };
 
-  const importProgram = (nextProgramItems) => {
-    updateData(appData.books, appData.testResults, nextProgramItems);
+  const importLibraryArchive = (archiveData) => {
+    const source = archiveData?.data ?? archiveData;
+    const nextBooks = Array.isArray(source?.books) ? source.books : [];
+    const nextResults = Array.isArray(source?.testResults) ? source.testResults : [];
+
+    updateData(nextBooks, nextResults, appData.programItems, appData.programArchives, appData.matchRules);
+    setSelectedBookId(nextBooks[0]?.id);
+    return {
+      books: nextBooks,
+      testResults: nextResults,
+    };
+  };
+
+  const importProgram = (nextProgramItems, nextProgramArchive) => {
+    const nextProgramArchives = [nextProgramArchive, ...appData.programArchives];
+    updateData(appData.books, appData.testResults, nextProgramItems, nextProgramArchives);
   };
 
   const clearProgram = () => {
     updateData(appData.books, appData.testResults, []);
-    replaceProgramItems(session.user.id, []);
+  };
+
+  const restoreProgramArchive = (archiveId) => {
+    const archive = appData.programArchives.find((item) => item.id === archiveId);
+    if (!archive) return;
+    updateData(appData.books, appData.testResults, archive.items ?? [], appData.programArchives);
+  };
+
+  const deleteProgramArchive = (archiveId) => {
+    const archive = appData.programArchives.find((item) => item.id === archiveId);
+    if (!archive) return;
+
+    const confirmed = window.confirm(`${archive.title} geçmişten silinsin mi? Aktif program ve kitap arşivi korunur.`);
+    if (!confirmed) return;
+
+    const nextProgramArchives = appData.programArchives.filter((item) => item.id !== archiveId);
+    updateData(appData.books, appData.testResults, appData.programItems, nextProgramArchives, appData.matchRules);
+  };
+
+  const updateProgramItemMatch = (programItemId, bookId) => {
+    const book = appData.books.find((item) => item.id === bookId);
+    if (!book) return;
+
+    const nextProgramItems = appData.programItems.map((item) => (
+      item.id === programItemId
+        ? {
+          ...item,
+          bookName: book.name,
+          matchedBookId: book.id,
+          matchedBookName: book.name,
+          matchType: 'manual',
+        }
+        : item
+    ));
+
+    const programItem = appData.programItems.find((item) => item.id === programItemId);
+    const rulePattern = programItem?.bookName || programItem?.matchedBookName || programItem?.rawText || book.name;
+    const normalizedPattern = normalizeText(rulePattern);
+    const nextRule = {
+      id: createId('match_rule', `${normalizedPattern}_${book.id}`),
+      pattern: rulePattern,
+      normalizedPattern,
+      bookId: book.id,
+      bookName: book.name,
+      createdAt: new Date().toISOString(),
+    };
+    const nextMatchRules = [
+      nextRule,
+      ...appData.matchRules.filter((rule) => rule.normalizedPattern !== normalizedPattern),
+    ];
+
+    updateData(appData.books, appData.testResults, nextProgramItems, appData.programArchives, nextMatchRules);
+  };
+
+  const clearProgramItemMatch = (programItemId) => {
+    const programItem = appData.programItems.find((item) => item.id === programItemId);
+    if (!programItem) return;
+
+    const rulePattern = programItem.bookName || programItem.matchedBookName || programItem.rawText;
+    const normalizedPattern = normalizeText(rulePattern);
+    const nextProgramItems = appData.programItems.map((item) => (
+      item.id === programItemId
+        ? {
+          ...item,
+          matchedBookId: '',
+          matchedBookName: '',
+          matchType: 'none',
+          matchScore: 0,
+          matchReason: '',
+        }
+        : item
+    ));
+    const nextMatchRules = appData.matchRules.filter((rule) => rule.normalizedPattern !== normalizedPattern);
+
+    updateData(appData.books, appData.testResults, nextProgramItems, appData.programArchives, nextMatchRules);
   };
 
   const openBook = (bookId) => {
@@ -657,15 +1073,28 @@ function App() {
   };
 
   if (authLoading) return <LoadingScreen />;
-  if (!session) return <LoginScreen />;
+  if (!session) return <LoginScreen onDemoLogin={startDemoSession} />;
 
   return (
-    <AppShell page={page} onNavigate={navigate} session={session} syncStatus={syncStatus}>
+    <AppShell
+      onNavigate={navigate}
+      onToggleTheme={toggleTheme}
+      page={page}
+      session={session}
+      syncStatus={syncStatus}
+      theme={theme}
+    >
       {page === 'dashboard' && (
         <Dashboard
           books={appData.books}
           onNavigate={navigate}
           recommendations={recommendations}
+          testResults={appData.testResults}
+        />
+      )}
+      {page === 'summary' && (
+        <GeneralSummary
+          books={appData.books}
           testResults={appData.testResults}
         />
       )}
@@ -694,6 +1123,7 @@ function App() {
           onAddTopic={addTopic}
           onBack={() => navigate('library')}
           onDeleteTopic={deleteTopic}
+          onImportTopics={importBookTopics}
           testResults={appData.testResults}
           onUpdateBook={updateBookDetails}
           onUpdateTopic={updateTopic}
@@ -703,8 +1133,14 @@ function App() {
       {page === 'coach' && (
         <CoachDay
           books={appData.books}
+          matchRules={appData.matchRules}
           onClearProgram={clearProgram}
+          onClearProgramItemMatch={clearProgramItemMatch}
+          onDeleteProgramArchive={deleteProgramArchive}
           onImportProgram={importProgram}
+          onUpdateProgramItemMatch={updateProgramItemMatch}
+          onRestoreProgram={restoreProgramArchive}
+          programArchives={appData.programArchives}
           programItems={appData.programItems}
           recommendations={recommendations}
           testResults={appData.testResults}
@@ -713,10 +1149,17 @@ function App() {
       {page === 'profile' && (
         <SupabaseProfile
           books={appData.books}
+          dataOwnerId={activeUserIdRef.current}
+          matchRules={appData.matchRules}
+          lastSavedAt={lastSavedAt}
           onImportCloudData={importCloudData}
+          onImportLibraryArchive={importLibraryArchive}
           onReset={resetData}
+          onSignOut={signOutSession}
           programItems={appData.programItems}
+          programArchives={appData.programArchives}
           session={session}
+          syncStatus={syncStatus}
           testResults={appData.testResults}
         />
       )}
@@ -740,7 +1183,7 @@ function SyncIndicator({ status }) {
   );
 }
 
-function AppShell({ children, page, onNavigate, session, syncStatus }) {
+function AppShell({ children, page, onNavigate, onToggleTheme, session, syncStatus, theme }) {
   const initials = session?.user?.email?.[0]?.toUpperCase() ?? 'KA';
   return (
     <div className="app">
@@ -751,6 +1194,15 @@ function AppShell({ children, page, onNavigate, session, syncStatus }) {
         </div>
         <div className="topbar-right">
           <SyncIndicator status={syncStatus} />
+          <button
+            className="icon-button"
+            onClick={onToggleTheme}
+            type="button"
+            aria-label={theme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'}
+            title={theme === 'dark' ? 'Açık tema' : 'Koyu tema'}
+          >
+            <Icon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} />
+          </button>
           <button className="icon-button" type="button" aria-label="Bildirimler">
             <Icon name="notifications" />
           </button>
@@ -836,6 +1288,200 @@ function Dashboard({ books, onNavigate, recommendations, testResults }) {
   );
 }
 
+function GeneralSummary({ books, testResults }) {
+  const [groupBy, setGroupBy] = useState('subject');
+  const [sortBy, setSortBy] = useState('totalTests');
+  const [onlyActive, setOnlyActive] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const visibleBooks = useMemo(() => (
+    onlyActive ? books.filter((book) => book.status === 'aktif') : books
+  ), [books, onlyActive]);
+
+  const totals = useMemo(() => visibleBooks.reduce(
+    (acc, book) => {
+      const totalTests = Number(book.totalTests) || 0;
+      const solvedTests = Number(book.solvedTests) || 0;
+      return {
+        bookCount: acc.bookCount + 1,
+        totalTests: acc.totalTests + totalTests,
+        solvedTests: acc.solvedTests + solvedTests,
+        remainingTests: acc.remainingTests + Math.max(0, totalTests - solvedTests),
+      };
+    },
+    { bookCount: 0, totalTests: 0, solvedTests: 0, remainingTests: 0 },
+  ), [visibleBooks]);
+
+  const overallProgress = totals.totalTests > 0
+    ? Math.round((totals.solvedTests / totals.totalTests) * 100)
+    : 0;
+
+  const groupedRows = useMemo(() => {
+    const rowMap = new Map();
+
+    visibleBooks.forEach((book) => {
+      const effectiveCatalog = getBookEffectiveCatalog(book);
+      const rawValue = getBookSummaryGroupValue(book, groupBy);
+      const label = rawValue || 'Belirsiz';
+      const totalTests = Number(book.totalTests) || 0;
+      const solvedTests = Number(book.solvedTests) || 0;
+
+      if (!rowMap.has(label)) {
+        rowMap.set(label, {
+          label,
+          bookCount: 0,
+          totalTests: 0,
+          solvedTests: 0,
+          remainingTests: 0,
+          books: [],
+        });
+      }
+
+      const row = rowMap.get(label);
+      row.bookCount += 1;
+      row.totalTests += totalTests;
+      row.solvedTests += solvedTests;
+      row.remainingTests += Math.max(0, totalTests - solvedTests);
+      row.books.push({
+        id: book.id,
+        name: book.name,
+        publisher: book.publisher,
+        coverImage: book.coverImage,
+        examType: book.examType,
+        subject: book.subject,
+        catalog: effectiveCatalog,
+        status: book.status,
+        totalTests,
+        solvedTests,
+        remainingTests: Math.max(0, totalTests - solvedTests),
+        progress: totalTests > 0 ? Math.round((solvedTests / totalTests) * 100) : 0,
+      });
+    });
+
+    return Array.from(rowMap.values())
+      .map((row) => ({
+        ...row,
+        progress: row.totalTests > 0 ? Math.round((row.solvedTests / row.totalTests) * 100) : 0,
+      }))
+      .filter((row) => !query.trim() || normalizeText(row.label).includes(normalizeText(query)))
+      .sort((a, b) => {
+        if (sortBy === 'progress') return b.progress - a.progress || b.totalTests - a.totalTests;
+        return b[sortBy] - a[sortBy] || a.label.localeCompare(b.label, 'tr');
+      });
+  }, [visibleBooks, groupBy, sortBy, query]);
+
+  return (
+    <>
+      <section className="page-heading">
+        <span>Genel arşiv durumu</span>
+        <h1>Genel Özet</h1>
+        <p>Bütün kitaplardan toplam test sayısını, çözdüğün testleri ve ders/katalog kırılımlarını buradan takip edebilirsin.</p>
+      </section>
+
+      <section className="stats-grid summary-total-grid">
+        <StatCard icon="auto_stories" value={totals.bookCount} label="Kitap" />
+        <StatCard icon="format_list_numbered" value={totals.totalTests} label="Toplam Test" />
+        <StatCard icon="task_alt" value={totals.solvedTests} label="Çözülen Test" />
+        <StatCard icon="pending_actions" value={totals.remainingTests} label="Kalan Test" />
+      </section>
+
+      <section className="info-card summary-overall-card">
+        <div className="section-title">
+          <div>
+            <h2>Toplam İlerleme</h2>
+            <p>{testResults.length} detaylı test kaydı var.</p>
+          </div>
+          <span className="chip primary">%{overallProgress}</span>
+        </div>
+        <ProgressLine label={`${totals.solvedTests}/${totals.totalTests} test çözüldü`} value={overallProgress} />
+      </section>
+
+      <section className="section">
+        <div className="section-title">
+          <h2>Kırılım</h2>
+          <label className="summary-toggle">
+            <input
+              checked={onlyActive}
+              onChange={(event) => setOnlyActive(event.target.checked)}
+              type="checkbox"
+            />
+            <span>Sadece aktif</span>
+          </label>
+        </div>
+
+        <div className="summary-controls">
+          <label className="field">
+            <span>Grupla</span>
+            <select value={groupBy} onChange={(event) => setGroupBy(event.target.value)}>
+              {summaryGroupOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
+          <label className="field">
+            <span>Sırala</span>
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+              {summarySortOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <div className="search-box">
+          <Icon name="search" />
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Kırılım içinde ara..."
+            type="text"
+            value={query}
+          />
+        </div>
+
+        <div className="stack">
+          {visibleBooks.length === 0 && <EmptyState text="Özet için kitap yok." />}
+          {visibleBooks.length > 0 && groupedRows.length === 0 && <EmptyState text="Bu aramayla eşleşen özet satırı yok." />}
+          {groupedRows.map((row) => (
+            <SummaryBreakdownRow key={row.label} row={row} />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function SummaryBreakdownRow({ row }) {
+  return (
+    <details className="summary-breakdown-row">
+      <summary>
+        <div className="summary-row-head">
+          <div>
+            <strong>{row.label}</strong>
+            <span>{row.bookCount} kitap - {row.totalTests} toplam test</span>
+          </div>
+          <span className="chip muted">%{row.progress}</span>
+        </div>
+        <ProgressLine label={`${row.solvedTests}/${row.totalTests} çözüldü - ${row.remainingTests} kaldı`} value={row.progress} />
+        <span className="summary-expand-hint">
+          <Icon name="expand_more" />
+          <span className="summary-hint-closed">Kitapları göster</span>
+          <span className="summary-hint-open">Kitapları gizle</span>
+        </span>
+      </summary>
+      <div className="summary-book-list">
+        {row.books
+          .sort((a, b) => b.totalTests - a.totalTests || a.name.localeCompare(b.name, 'tr'))
+          .map((book) => (
+            <div className="summary-book-row" key={book.id}>
+              <CoverThumb book={book} />
+              <div>
+                <strong>{book.name}</strong>
+                <span>{book.publisher} - {book.examType} - {book.catalog} - {statusLabel(book.status)}</span>
+                <ProgressLine label={`${book.solvedTests}/${book.totalTests} çözüldü - ${book.remainingTests} kaldı`} value={book.progress} />
+              </div>
+            </div>
+          ))}
+      </div>
+    </details>
+  );
+}
+
 function Library({ books, onAddBook, onDeleteBook, onOpenBook }) {
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
@@ -911,27 +1557,50 @@ function Library({ books, onAddBook, onDeleteBook, onOpenBook }) {
 function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId }) {
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('Tumu');
-  const filters = ['Tumu', 'Matematik', 'Fen', 'TYT', 'AYT', 'Aktif'];
+  const [activeFilter, setActiveFilter] = useState('Tümü');
+  const [sortSolvedFirst, setSortSolvedFirst] = useState(false);
   const filteredBooks = books.filter((book) => {
-    const searchTarget = normalizeText(`${book.name} ${book.publisher} ${book.subject} ${book.examType} ${book.status} ${book.topics.map((topic) => topic.name).join(' ')}`);
+    const effectiveCatalog = getBookEffectiveCatalog(book);
+    const searchTarget = normalizeText(`${book.name} ${book.publisher} ${book.subject} ${book.examType} ${effectiveCatalog} ${book.catalog ?? ''} ${book.bookFormat ?? ''} ${book.setName ?? ''} ${book.status} ${book.topics.map((topic) => topic.name).join(' ')}`);
     const matchesQuery = !query.trim() || searchTarget.includes(normalizeText(query));
-    const matchesFilter = activeFilter === 'Tumu'
+    const matchesFilter = activeFilter === 'Tümü'
       || normalizeText(book.subject) === normalizeText(activeFilter)
       || normalizeText(book.examType) === normalizeText(activeFilter)
+      || normalizeText(effectiveCatalog) === normalizeText(activeFilter)
+      || normalizeText(book.catalog ?? '') === normalizeText(activeFilter)
+      || normalizeText(book.bookFormat ?? '') === normalizeText(activeFilter)
+      || normalizeText(book.setName ?? '') === normalizeText(activeFilter)
       || (activeFilter === 'Aktif' && book.status === 'aktif');
 
     return matchesQuery && matchesFilter;
   });
+  const visibleBooks = sortSolvedFirst
+    ? [...filteredBooks].sort((a, b) => (
+      (Number(b.solvedTests) || 0) - (Number(a.solvedTests) || 0)
+      || bookProgress(b) - bookProgress(a)
+      || (Number(b.totalTests) || 0) - (Number(a.totalTests) || 0)
+      || a.name.localeCompare(b.name, 'tr')
+    ))
+    : filteredBooks;
 
   return (
     <>
       <section className="search-section">
         <div className="section-title">
           <h1>Kitap Arsivi</h1>
-          <button className="primary-inline-button" onClick={() => setShowForm((value) => !value)} type="button">
-            {showForm ? 'Formu Kapat' : 'Kitap Ekle'}
-          </button>
+          <div className="library-actions">
+            <button
+              className={sortSolvedFirst ? 'primary-inline-button' : 'secondary-inline-button'}
+              onClick={() => setSortSolvedFirst((value) => !value)}
+              type="button"
+            >
+              <Icon name="sort" />
+              {sortSolvedFirst ? 'Sıralı' : 'Sırala'}
+            </button>
+            <button className="primary-inline-button" onClick={() => setShowForm((value) => !value)} type="button">
+              {showForm ? 'Formu Kapat' : 'Kitap Ekle'}
+            </button>
+          </div>
         </div>
         <div className="search-box">
           <Icon name="search" />
@@ -943,7 +1612,7 @@ function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId })
           />
         </div>
         <div className="chips-row">
-          {filters.map((label) => (
+          {libraryFilters.map((label) => (
             <button
               className={`chip ${activeFilter === label ? 'primary' : ''}`}
               key={label}
@@ -955,35 +1624,44 @@ function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId })
           ))}
         </div>
       </section>
-      {showForm && <BookForm onAddBook={onAddBook} />}
+      {showForm && <BookForm onAddBook={onAddBook} userId={userId} />}
       <section className="stack">
         {books.length === 0 && <EmptyState text="Henuz kitap yok. Kitap Ekle butonuyla gercek kitaplarini eklemeye baslayabilirsin." />}
-        {books.length > 0 && filteredBooks.length === 0 && <EmptyState text="Bu arama veya filtreyle eslesen kitap yok." />}
-        {filteredBooks.map((book) => (
+        {books.length > 0 && visibleBooks.length === 0 && <EmptyState text="Bu arama veya filtreyle eslesen kitap yok." />}
+        {visibleBooks.map((book) => (
           <article className="book-card" key={book.id}>
-            <div className="card-top">
-              <div className="chips-row compact">
-                <span className="chip small">{book.subject}</span>
-                <span className="chip small muted">{book.examType}</span>
-                <span className="chip small primary">{statusLabel(book.status)}</span>
-              </div>
-              <button
-                className="delete-book-button"
-                onClick={() => onDeleteBook(book.id)}
-                type="button"
-                aria-label={`${book.name} kitabini sil`}
-              >
-                <Icon name="delete" />
-              </button>
-            </div>
-            <button className="book-card-main" onClick={() => onOpenBook(book.id)} type="button">
-              <CoverThumb book={book} />
-              <div>
-                <h2>{book.name}</h2>
-                <p>{book.publisher} - {book.topics.map((topic) => topic.name).slice(0, 2).join(', ')}</p>
-              </div>
-            </button>
-            <ProgressLine label={`Ilerleme - ${book.solvedTests}/${book.totalTests} test`} value={bookProgress(book)} />
+            {(() => {
+              const effectiveCatalog = getBookEffectiveCatalog(book);
+              return (
+                <>
+                  <div className="card-top">
+                    <div className="chips-row compact">
+                      <span className="chip small">{book.subject}</span>
+                      <span className="chip small muted">{book.examType}</span>
+                      {effectiveCatalog && effectiveCatalog !== 'Genel' && <span className="chip small muted">{effectiveCatalog}</span>}
+                      {book.bookFormat && book.bookFormat !== 'Tek Kitap' && <span className="chip small muted">{book.bookFormat}</span>}
+                      <span className="chip small primary">{statusLabel(book.status)}</span>
+                    </div>
+                    <button
+                      className="delete-book-button"
+                      onClick={() => onDeleteBook(book.id)}
+                      type="button"
+                      aria-label={`${book.name} kitabini sil`}
+                    >
+                      <Icon name="delete" />
+                    </button>
+                  </div>
+                  <button className="book-card-main" onClick={() => onOpenBook(book.id)} type="button">
+                    <CoverThumb book={book} />
+                    <div>
+                      <h2>{book.name}</h2>
+                      <p>{book.publisher} - {[book.setName, ...book.topics.map((topic) => topic.name).slice(0, 2)].filter(Boolean).join(', ')}</p>
+                    </div>
+                  </button>
+                  <ProgressLine label={`Ilerleme - ${book.solvedTests}/${book.totalTests} test`} value={bookProgress(book)} />
+                </>
+              );
+            })()}
           </article>
         ))}
       </section>
@@ -1021,16 +1699,35 @@ function BookForm({ onAddBook, userId }) {
         <label className="field">
           <span>Ders</span>
           <select value={form.subject} onChange={(event) => update('subject', event.target.value)}>
-            {['Matematik', 'Türkçe', 'Fen', 'Fizik', 'Kimya', 'Biyoloji', 'Sosyal'].map((item) => <option key={item}>{item}</option>)}
+            {subjectOptions.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
         <label className="field">
           <span>Tür</span>
           <select value={form.examType} onChange={(event) => update('examType', event.target.value)}>
-            {['TYT', 'AYT', 'TYT-AYT'].map((item) => <option key={item}>{item}</option>)}
+            {examTypeOptions.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
       </div>
+      <div className="input-grid">
+        <label className="field">
+          <span>Katalog</span>
+          <select value={form.catalog} onChange={(event) => update('catalog', event.target.value)}>
+            {catalogOptions.map((item) => <option key={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Kitap Yapısı</span>
+          <select value={form.bookFormat} onChange={(event) => update('bookFormat', event.target.value)}>
+            {bookFormatOptions.map((item) => <option key={item}>{item}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="field">
+        <span>Set / Fasikül Katalog Adı</span>
+        <input value={form.setName} onChange={(event) => update('setName', event.target.value)} placeholder="Örn. Orijinal 12 Fasikül Seti" />
+        <small>Set içinden ayrı fasiküller ekliyorsan aynı katalog adını kullan.</small>
+      </label>
       <label className="field">
         <span>Durum</span>
         <select value={form.status} onChange={(event) => update('status', event.target.value)}>
@@ -1309,13 +2006,58 @@ function TestResultRow({ book, onDelete, onUpdate, result }) {
   );
 }
 
-function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onUpdateBook, onUpdateTopic, testResults, userId }) {
+function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onImportTopics, onUpdateBook, onUpdateTopic, testResults, userId }) {
+  const topicImportRef = useRef(null);
   const [showBookEditor, setShowBookEditor] = useState(false);
   const [showTopicForm, setShowTopicForm] = useState(false);
+  const [topicImportMessage, setTopicImportMessage] = useState('');
   const [selectedTopic, setSelectedTopic] = useState(null);
   const selectedTopicResults = selectedTopic
     ? testResults.filter((result) => result.bookId === book.id && result.topicId === selectedTopic.id)
     : [];
+  const bookResultCount = testResults.filter((result) => result.bookId === book.id).length;
+
+  const exportTopicDistribution = () => {
+    const payload = createTopicDistributionExport(book);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kitaparsiv-konu-dagilimi-${safeFilePart(book.name)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setTopicImportMessage(`${book.topics.length} konu JSON olarak dışa aktarıldı.`);
+  };
+
+  const importTopicDistributionFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const importedTopics = parseTopicDistributionImport(parsed, book.name);
+        const confirmed = window.confirm(
+          `${book.name} kitabının mevcut konu dağılımı ${importedTopics.length} konu ile değiştirilsin mi?`
+          + (bookResultCount > 0 ? ` Bu kitaba bağlı ${bookResultCount} detaylı test kaydı temizlenir.` : ''),
+        );
+        if (!confirmed) return;
+
+        onImportTopics(book.id, importedTopics);
+        setSelectedTopic(null);
+        setShowTopicForm(false);
+        setTopicImportMessage(`${importedTopics.length} konu içe aktarıldı.`);
+      } catch (error) {
+        setTopicImportMessage(error?.message || 'JSON okunamadı. Konu dağılımı şemasına uygun dosya seç.');
+      } finally {
+        event.target.value = '';
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
 
   return (
     <>
@@ -1351,10 +2093,28 @@ function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onUpdateBo
       <section className="section topic-management">
         <div className="section-title">
           <h2>Konu Dagilimi</h2>
-          <button className="primary-inline-button" onClick={() => setShowTopicForm((value) => !value)} type="button">
-            {showTopicForm ? 'Kapat' : 'Konu Ekle'}
-          </button>
+          <div className="topic-actions-row">
+            <button className="secondary-inline-button" onClick={exportTopicDistribution} type="button">
+              <Icon name="download" />
+              JSON Dışa Aktar
+            </button>
+            <button className="secondary-inline-button" onClick={() => topicImportRef.current?.click()} type="button">
+              <Icon name="upload" />
+              JSON İçe Aktar
+            </button>
+            <button className="primary-inline-button" onClick={() => setShowTopicForm((value) => !value)} type="button">
+              {showTopicForm ? 'Kapat' : 'Konu Ekle'}
+            </button>
+          </div>
         </div>
+        <input
+          accept="application/json,.json"
+          className="hidden-file-input"
+          onChange={importTopicDistributionFile}
+          ref={topicImportRef}
+          type="file"
+        />
+        {topicImportMessage && <p className="success-message">{topicImportMessage}</p>}
         {showTopicForm && (
           <TopicForm
             onCancel={() => setShowTopicForm(false)}
@@ -1394,6 +2154,9 @@ function BookEditForm({ book, onCancel, onSave, userId }) {
     publisher: book.publisher,
     examType: book.examType,
     subject: book.subject,
+    catalog: book.catalog ?? 'Genel',
+    bookFormat: book.bookFormat ?? 'Tek Kitap',
+    setName: book.setName ?? '',
     status: book.status,
     coverImage: book.coverImage ?? '',
   });
@@ -1424,16 +2187,34 @@ function BookEditForm({ book, onCancel, onSave, userId }) {
         <label className="field">
           <span>Ders</span>
           <select value={form.subject} onChange={(event) => update('subject', event.target.value)}>
-            {['Matematik', 'Turkce', 'Fen', 'Fizik', 'Kimya', 'Biyoloji', 'Sosyal'].map((item) => <option key={item}>{item}</option>)}
+            {subjectOptions.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
         <label className="field">
           <span>Tur</span>
           <select value={form.examType} onChange={(event) => update('examType', event.target.value)}>
-            {['TYT', 'AYT', 'TYT-AYT'].map((item) => <option key={item}>{item}</option>)}
+            {examTypeOptions.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
       </div>
+      <div className="input-grid">
+        <label className="field">
+          <span>Katalog</span>
+          <select value={form.catalog} onChange={(event) => update('catalog', event.target.value)}>
+            {catalogOptions.map((item) => <option key={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Kitap Yapısı</span>
+          <select value={form.bookFormat} onChange={(event) => update('bookFormat', event.target.value)}>
+            {bookFormatOptions.map((item) => <option key={item}>{item}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="field">
+        <span>Set / Fasikül Katalog Adı</span>
+        <input value={form.setName} onChange={(event) => update('setName', event.target.value)} />
+      </label>
       <label className="field">
         <span>Durum</span>
         <select value={form.status} onChange={(event) => update('status', event.target.value)}>
@@ -1493,8 +2274,33 @@ function TopicForm({ initialTopic, onCancel, onSave }) {
   );
 }
 
-function CoachDay({ books, onClearProgram, onImportProgram, programItems, recommendations, testResults }) {
+function CoachDay({
+  books,
+  matchRules,
+  onClearProgram,
+  onClearProgramItemMatch,
+  onDeleteProgramArchive,
+  onImportProgram,
+  onUpdateProgramItemMatch,
+  onRestoreProgram,
+  programArchives,
+  programItems,
+  recommendations,
+  testResults,
+}) {
+  const [activeCoachTab, setActiveCoachTab] = useState('summary');
   const [importMessage, setImportMessage] = useState('');
+  const coachQuestions = testResults.filter((result) => result.askCoach);
+  const mustBring = recommendations.filter((item) => item.level === 'kesin_gotur');
+  const niceToBring = recommendations.filter((item) => item.level === 'goturmen_iyi_olur');
+
+  const coachTabs = [
+    { id: 'summary', icon: 'insights', label: 'Özet' },
+    { id: 'program', icon: 'event_note', label: 'Program', count: programItems.length },
+    { id: 'history', icon: 'history', label: 'Geçmiş', count: programArchives.length },
+    { id: 'questions', icon: 'help', label: 'Sorular', count: coachQuestions.length },
+    { id: 'bring', icon: 'backpack', label: 'Götür', count: mustBring.length + niceToBring.length },
+  ];
 
   const handleProgramFile = (event) => {
     const file = event.target.files?.[0];
@@ -1504,9 +2310,10 @@ function CoachDay({ books, onClearProgram, onImportProgram, programItems, recomm
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result));
-        const items = parseProgramExport(parsed, books);
+        const items = parseProgramExport(parsed, books, matchRules);
         const unmatchedCount = items.filter((item) => !item.matchedBookId).length;
-        onImportProgram(items);
+        const archive = createProgramArchive(parsed, items, unmatchedCount);
+        onImportProgram(items, archive);
         setImportMessage(`${items.length} program görevi içe aktarıldı.`);
         if (unmatchedCount) {
           setImportMessage(`${items.length} program gorevi ice aktarildi. ${unmatchedCount} gorev arsivdeki kitaplarla eslesmedi.`);
@@ -1537,71 +2344,269 @@ function CoachDay({ books, onClearProgram, onImportProgram, programItems, recomm
         <h1>Koç Günü</h1>
         <p>Haftalık ilerlemeni gözden geçir, koça sorulacakları ve götürülecek kitapları netleştir.</p>
       </section>
-      <section className="form-card">
-        <label className="field">
-          <span>Ders Programı JSON İçe Aktar</span>
-          <input accept="application/json,.json" onChange={handleProgramFile} type="file" />
-          <small>Sayac program yedeğindeki `data.tasks` alanı okunur ve haftalık görev listesine dönüştürülür.</small>
-        </label>
-        {importMessage && <p className="success-message">{importMessage}</p>}
-        <button className="danger-button" onClick={handleClearProgram} type="button">
-          Ice Aktarilan Programi Sil
-        </button>
-      </section>
-      <section className="info-card">
-        <div className="section-title">
-          <h2><Icon name="insights" filled /> Haftalık Özet</h2>
-          <span className="chip muted">12. Hafta</span>
-        </div>
-        <div className="stats-grid">
-          <StatCard icon="local_fire_department" value={books.filter((book) => book.status === 'aktif').length} label="Aktif Kitap" />
-          <StatCard icon="trending_up" value={testResults.length} label="Kayıtlı Test" />
-        </div>
-        <p>{books.length === 0 ? 'Arşiv boş olduğu için taşıma önerisi üretilmiyor.' : 'Programdaki kitap adı ve koça sorulacak işaretler bu ekrandaki taşıma önerilerini belirler.'}</p>
-      </section>
-      <section className="section">
-        <div className="section-title">
-          <h2>Haftalık Programdan Gelenler</h2>
-          <span className="chip primary">Bağlı</span>
-        </div>
-        <div className="stack">
-          {programItems.length === 0 && <EmptyState text="Henüz program içe aktarılmadı." />}
-          {programItems.map((item) => (
-            <ProgramRow key={item.id} item={item} />
-          ))}
-        </div>
-      </section>
-      <section className="section">
-        <h2>Koça Sorulacaklar</h2>
-        {testResults.filter((result) => result.askCoach).length === 0 && (
-          <EmptyState text="Koça sorulacak işaretli test yok." />
-        )}
-        {testResults.filter((result) => result.askCoach).map((result) => (
-          <WarningRow key={result.id} title={result.coachNote || 'Koça sorulacak test'} meta={`${bookName(books, result.bookId)} • Test ${result.testNo}`} />
+      <nav className="coach-tabs" aria-label="Koç ekranı sekmeleri">
+        {coachTabs.map((item) => (
+          <button
+            aria-current={activeCoachTab === item.id ? 'page' : undefined}
+            className={activeCoachTab === item.id ? 'active' : ''}
+            key={item.id}
+            onClick={() => setActiveCoachTab(item.id)}
+            type="button"
+          >
+            <Icon name={item.icon} />
+            <span>{item.label}</span>
+            {typeof item.count === 'number' && <strong>{item.count}</strong>}
+          </button>
         ))}
-      </section>
-      <section className="section">
-        <h2>Kesin Götür</h2>
-        <div className="stack">
-          {recommendations.filter((item) => item.level === 'kesin_gotur').length === 0 && (
-            <EmptyState text="Kesin götür önerisi yok." />
-          )}
-          {recommendations.filter((item) => item.level === 'kesin_gotur').map((item) => (
-            <BringRow key={item.book.id} item={item} />
-          ))}
-        </div>
-      </section>
-      <section className="section">
-        <h2>Götürmen İyi Olur</h2>
-        {recommendations.filter((item) => item.level === 'goturmen_iyi_olur').length === 0 && (
-          <EmptyState text="Ek öneri yok." />
+      </nav>
+      <div className="coach-tab-panel">
+        {activeCoachTab === 'summary' && (
+          <>
+            <section className="form-card">
+              <label className="field">
+                <span>Ders Programı JSON İçe Aktar</span>
+                <input accept="application/json,.json" onChange={handleProgramFile} type="file" />
+                <small>Sayac program yedeğindeki `data.tasks` alanı okunur ve haftalık görev listesine dönüştürülür.</small>
+              </label>
+              {importMessage && <p className="success-message">{importMessage}</p>}
+              <button className="danger-button" onClick={handleClearProgram} type="button">
+                Ice Aktarilan Programi Sil
+              </button>
+            </section>
+            <section className="info-card">
+              <div className="section-title">
+                <h2><Icon name="insights" filled /> Haftalık Özet</h2>
+                <span className="chip muted">{programArchives[0]?.title ?? 'Program yok'}</span>
+              </div>
+              <div className="stats-grid">
+                <StatCard icon="local_fire_department" value={books.filter((book) => book.status === 'aktif').length} label="Aktif Kitap" />
+                <StatCard icon="trending_up" value={testResults.length} label="Kayıtlı Test" />
+              </div>
+              <p>{books.length === 0 ? 'Arşiv boş olduğu için taşıma önerisi üretilmiyor.' : 'Programdaki kitap adı ve koça sorulacak işaretler bu ekrandaki taşıma önerilerini belirler.'}</p>
+            </section>
+          </>
         )}
-        {recommendations.filter((item) => item.level === 'goturmen_iyi_olur').map((item) => (
-          <BringRow key={item.book.id} item={item} />
-        ))}
-      </section>
+
+        {activeCoachTab === 'program' && (
+          <section className="section">
+            <div className="section-title">
+              <h2>Haftalık Programdan Gelenler</h2>
+              <span className="chip primary">Bağlı</span>
+            </div>
+            <div className="stack">
+              {programItems.length === 0 && <EmptyState text="Henüz program içe aktarılmadı." />}
+              {programItems.map((item) => (
+                <ProgramRow
+                  books={books}
+                  item={item}
+                  key={item.id}
+                  onClearMatch={onClearProgramItemMatch}
+                  onUpdateMatch={onUpdateProgramItemMatch}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeCoachTab === 'history' && (
+          <section className="section">
+            <div className="section-title">
+              <h2>Program Geçmişi</h2>
+              <span className="chip muted">{programArchives.length} kayıt</span>
+            </div>
+            <div className="stack">
+              {programArchives.length === 0 && <EmptyState text="Henüz program geçmişi yok." />}
+              {programArchives.map((archive) => (
+                <ProgramArchiveRow
+                  key={archive.id}
+                  archive={archive}
+                  onDelete={onDeleteProgramArchive}
+                  onRestore={onRestoreProgram}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeCoachTab === 'questions' && (
+          <section className="section">
+            <h2>Koça Sorulacaklar</h2>
+            {coachQuestions.length === 0 && (
+              <EmptyState text="Koça sorulacak işaretli test yok." />
+            )}
+            {coachQuestions.map((result) => (
+              <WarningRow key={result.id} title={result.coachNote || 'Koça sorulacak test'} meta={`${bookName(books, result.bookId)} • Test ${result.testNo}`} />
+            ))}
+          </section>
+        )}
+
+        {activeCoachTab === 'bring' && (
+          <>
+            <section className="section">
+              <h2>Kesin Götür</h2>
+              <div className="stack">
+                {mustBring.length === 0 && (
+                  <EmptyState text="Kesin götür önerisi yok." />
+                )}
+                {mustBring.map((item) => (
+                  <BringRow key={item.book.id} item={item} />
+                ))}
+              </div>
+            </section>
+            <section className="section">
+              <h2>Götürmen İyi Olur</h2>
+              {niceToBring.length === 0 && (
+                <EmptyState text="Ek öneri yok." />
+              )}
+              {niceToBring.map((item) => (
+                <BringRow key={item.book.id} item={item} />
+              ))}
+            </section>
+          </>
+        )}
+      </div>
     </>
   );
+}
+
+function createProgramArchive(rawExport, items, unmatchedCount) {
+  const data = rawExport?.data ?? {};
+  const programDate = normalizeDateValue(data.date) || normalizeDateValue(rawExport?.exportedAt);
+  const meetingNo = String(data.meetingNo ?? '').trim();
+  const title = meetingNo
+    ? `${meetingNo}. Koç Programı`
+    : programDate
+      ? `${formatDateLabel(programDate)} Programı`
+      : 'Haftalık Program';
+
+  return {
+    id: createId('program_archive', `${title}_${Date.now()}`),
+    title,
+    programDate,
+    meetingNo,
+    advisor: String(data.advisor ?? '').trim(),
+    studentName: String(data.studentName ?? '').trim(),
+    source: rawExport?.app || 'ders_programi',
+    itemCount: items.length,
+    unmatchedCount,
+    importedAt: new Date().toISOString(),
+    items,
+    rawExport,
+  };
+}
+
+function normalizeDateValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDateLabel(value) {
+  if (!value) return 'Tarih yok';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+}
+
+function formatDateTimeLabel(value) {
+  if (!value) return 'Henüz yok';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('tr-TR', {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function buildHealthReport({
+  books,
+  dataOwnerId,
+  matchRules,
+  programArchives,
+  programItems,
+  session,
+  syncStatus,
+  testResults,
+}) {
+  const issues = [];
+  const bookIds = new Set(books.map((book) => book.id));
+  const topicIds = new Set(books.flatMap((book) => (book.topics ?? []).map((topic) => topic.id)));
+
+  if (session?.user?.id && dataOwnerId && session.user.id !== dataOwnerId) {
+    issues.push({ level: 'critical', text: 'Ekrandaki veri aktif hesapla eşleşmiyor. Sayfayı yenile veya çıkış yapıp tekrar gir.' });
+  }
+
+  books.forEach((book) => {
+    const topics = book.topics ?? [];
+    const topicTotal = topics.reduce((sum, topic) => sum + (Number(topic.totalTests) || 0), 0);
+    const topicSolved = topics.reduce((sum, topic) => sum + (Number(topic.solvedTests) || 0), 0);
+    const bookTotal = Number(book.totalTests) || 0;
+    const bookSolved = Number(book.solvedTests) || 0;
+
+    if (topics.length === 0) {
+      issues.push({ level: 'warning', text: `${book.name}: konu girilmemiş.` });
+    }
+    if (bookTotal !== topicTotal) {
+      issues.push({ level: 'warning', text: `${book.name}: kitap toplamı (${bookTotal}) konu toplamıyla (${topicTotal}) eşleşmiyor.` });
+    }
+    if (bookSolved !== topicSolved) {
+      issues.push({ level: 'warning', text: `${book.name}: çözülen test (${bookSolved}) konu çözümleriyle (${topicSolved}) eşleşmiyor.` });
+    }
+    if (bookSolved > bookTotal) {
+      issues.push({ level: 'critical', text: `${book.name}: çözülen test toplam testi geçmiş.` });
+    }
+
+    topics.forEach((topic) => {
+      const total = Number(topic.totalTests) || 0;
+      const solved = Number(topic.solvedTests) || 0;
+      if (total <= 0) {
+        issues.push({ level: 'warning', text: `${book.name} / ${topic.name}: toplam test 0 veya boş.` });
+      }
+      if (solved > total) {
+        issues.push({ level: 'critical', text: `${book.name} / ${topic.name}: çözülen test toplamı geçmiş.` });
+      }
+    });
+  });
+
+  testResults.forEach((result) => {
+    if (!bookIds.has(result.bookId)) {
+      issues.push({ level: 'critical', text: `Test ${result.testNo}: bağlı olduğu kitap arşivde yok.` });
+    }
+    if (result.topicId && !topicIds.has(result.topicId)) {
+      issues.push({ level: 'warning', text: `Test ${result.testNo}: bağlı olduğu konu arşivde yok.` });
+    }
+  });
+
+  const unmatchedProgramCount = programItems.filter((item) => !item.matchedBookId).length;
+  if (unmatchedProgramCount > 0) {
+    issues.push({ level: 'warning', text: `Aktif programda ${unmatchedProgramCount} görev kitapla eşleşmemiş.` });
+  }
+
+  const emptyArchiveCount = programArchives.filter((archive) => !Array.isArray(archive.items) || archive.items.length === 0).length;
+  if (emptyArchiveCount > 0) {
+    issues.push({ level: 'warning', text: `${emptyArchiveCount} program geçmişinde görev detayı yok.` });
+  }
+
+  const brokenMatchRules = matchRules.filter((rule) => rule.bookId && !bookIds.has(rule.bookId)).length;
+  if (brokenMatchRules > 0) {
+    issues.push({ level: 'warning', text: `${brokenMatchRules} eşleşme kuralı arşivde olmayan kitaba bağlı.` });
+  }
+
+  if (!isDemoSession(session) && syncStatus === 'error') {
+    issues.push({ level: 'critical', text: 'Otomatik bulut senkronizasyonunda hata var.' });
+  }
+
+  const criticalCount = issues.filter((issue) => issue.level === 'critical').length;
+  return {
+    criticalCount,
+    issues,
+    status: criticalCount > 0 ? 'critical' : issues.length > 0 ? 'warning' : 'ready',
+    warningCount: issues.length - criticalCount,
+  };
 }
 
 function Profile({ books, onReset, programItems, testResults }) {
@@ -1627,21 +2632,60 @@ function Profile({ books, onReset, programItems, testResults }) {
   );
 }
 
-function SupabaseProfile({ books, onImportCloudData, onReset, programItems, session, testResults }) {
+function SupabaseProfile({
+  books,
+  dataOwnerId,
+  lastSavedAt,
+  matchRules = [],
+  onImportCloudData,
+  onImportLibraryArchive,
+  onReset,
+  onSignOut,
+  programItems,
+  programArchives = [],
+  session,
+  syncStatus,
+  testResults,
+}) {
+  const libraryImportRef = useRef(null);
+  const [libraryMessage, setLibraryMessage] = useState('');
   const [resetMessage, setResetMessage] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
+  const healthReport = useMemo(() => buildHealthReport({
+    books,
+    dataOwnerId,
+    matchRules,
+    programArchives,
+    programItems,
+    session,
+    syncStatus,
+    testResults,
+  }), [books, dataOwnerId, matchRules, programArchives, programItems, session, syncStatus, testResults]);
+  const syncLabel = isDemoSession(session)
+    ? 'Demo'
+    : syncStatus === 'synced'
+      ? 'Kaydedildi'
+      : syncStatus === 'syncing'
+        ? 'Kaydediliyor'
+        : syncStatus === 'error'
+          ? 'Hata'
+          : 'Bekliyor';
+  const healthLabel = healthReport.status === 'ready'
+    ? 'Yayına hazır'
+    : healthReport.status === 'critical'
+      ? 'Kritik kontrol'
+      : 'Kontrol gerekli';
 
   const handleReset = async () => {
     const fresh = await onReset();
     setResetMessage(`Veriler sıfırlandı: ${fresh.books.length} kitap, ${fresh.testResults.length} test kaydı, ${fresh.programItems.length} program görevi.`);
   };
 
-  const signOut = async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-  };
-
   const saveCloudBackup = async () => {
+    if (isDemoSession(session)) {
+      setSyncMessage('Demo hesap yalnızca bu tarayıcıda saklanır.');
+      return;
+    }
     if (!supabase || !session?.user) return;
 
     setSyncMessage('Buluta kaydediliyor...');
@@ -1651,6 +2695,8 @@ function SupabaseProfile({ books, onImportCloudData, onReset, programItems, sess
       books,
       testResults,
       programItems,
+      programArchives,
+      matchRules,
     };
     const { error } = await supabase
       .from('app_states')
@@ -1660,6 +2706,10 @@ function SupabaseProfile({ books, onImportCloudData, onReset, programItems, sess
   };
 
   const loadCloudBackup = async () => {
+    if (isDemoSession(session)) {
+      setSyncMessage('Demo hesap için bulut yedeği kullanılmaz.');
+      return;
+    }
     if (!supabase || !session?.user) return;
 
     const confirmed = window.confirm('Buluttaki yedek bu cihazdaki verinin üzerine yazılsın mı?');
@@ -1686,6 +2736,57 @@ function SupabaseProfile({ books, onImportCloudData, onReset, programItems, sess
     setSyncMessage(`Buluttan yüklendi: ${imported.books.length} kitap, ${imported.testResults.length} test kaydı.`);
   };
 
+  const exportLibraryArchive = () => {
+    const payload = {
+      type: 'kitaparsiv-library-archive',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: {
+        books,
+        testResults,
+      },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateLabel = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `kitaparsiv-kitaplik-${dateLabel}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setLibraryMessage(`${books.length} kitap ve ${testResults.length} test kaydı JSON olarak dışa aktarıldı.`);
+  };
+
+  const importLibraryArchiveFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const source = parsed?.data ?? parsed;
+        if (!Array.isArray(source?.books)) {
+          setLibraryMessage('JSON dosyasında kitap arşivi bulunamadı.');
+          return;
+        }
+
+        const confirmed = window.confirm('Bu JSON dosyası mevcut kitaplık arşivinin üzerine yazılsın mı? Koç programı ve program geçmişi korunur.');
+        if (!confirmed) return;
+
+        const imported = onImportLibraryArchive(parsed);
+        setLibraryMessage(`${imported.books.length} kitap ve ${imported.testResults.length} test kaydı içe aktarıldı.`);
+      } catch {
+        setLibraryMessage('JSON okunamadı. KitapArşiv kitaplık yedeği seçtiğinden emin ol.');
+      } finally {
+        event.target.value = '';
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
   return (
     <section className="info-card">
       <h1>Profil</h1>
@@ -1700,7 +2801,53 @@ function SupabaseProfile({ books, onImportCloudData, onReset, programItems, sess
         <span>{books.length} kitap</span>
         <span>{testResults.length} test kaydı</span>
         <span>{programItems.length} program görevi</span>
+        <span>{programArchives.length} program geçmişi</span>
+        <span>{matchRules.length} eşleşme kuralı</span>
       </div>
+      <section className={`health-panel ${healthReport.status}`}>
+        <div className="section-title">
+          <h2>Yayın Kontrolü</h2>
+          <span className={`chip small ${healthReport.status === 'ready' ? 'primary' : 'muted'}`}>{healthLabel}</span>
+        </div>
+        <div className="health-grid">
+          <div>
+            <Icon name={healthReport.status === 'ready' ? 'verified' : 'rule'} filled />
+            <strong>{healthReport.issues.length}</strong>
+            <span>Bulgu</span>
+          </div>
+          <div>
+            <Icon name="cloud_done" filled />
+            <strong>{syncLabel}</strong>
+            <span>Sync</span>
+          </div>
+          <div>
+            <Icon name="save" filled />
+            <strong>{formatDateTimeLabel(lastSavedAt)}</strong>
+            <span>Son kayıt</span>
+          </div>
+          <div>
+            <Icon name="inventory_2" filled />
+            <strong>{books.length + testResults.length + programItems.length}</strong>
+            <span>Veri parçası</span>
+          </div>
+        </div>
+        {healthReport.issues.length === 0 && (
+          <p className="success-message">Kritik veri tutarsızlığı bulunmadı. Arşiv yayına hazır görünüyor.</p>
+        )}
+        {healthReport.issues.length > 0 && (
+          <div className="health-issue-list">
+            {healthReport.issues.slice(0, 8).map((issue, index) => (
+              <div className={`health-issue ${issue.level}`} key={`${issue.text}_${index}`}>
+                <Icon name={issue.level === 'critical' ? 'error' : 'warning'} />
+                <span>{issue.text}</span>
+              </div>
+            ))}
+            {healthReport.issues.length > 8 && (
+              <span className="helper-text">+{healthReport.issues.length - 8} ek bulgu daha var.</span>
+            )}
+          </div>
+        )}
+      </section>
       <section className="sync-panel">
         <div className="section-title">
           <h2>Bulut Yedeği</h2>
@@ -1712,7 +2859,26 @@ function SupabaseProfile({ books, onImportCloudData, onReset, programItems, sess
         </div>
         {syncMessage && <p className="success-message">{syncMessage}</p>}
       </section>
-      <button className="secondary-button full-width" onClick={signOut} type="button">
+      <section className="sync-panel">
+        <div className="section-title">
+          <h2>Kitaplık JSON Yedeği</h2>
+          <span className="chip small muted">Yerel</span>
+        </div>
+        <p className="helper-text">Sadece kitap arşivi ve test kayıtları yedeklenir. Koç programı, program geçmişi ve eşleşme kuralları korunur.</p>
+        <div className="form-actions">
+          <button className="primary-inline-button" onClick={exportLibraryArchive} type="button">JSON Dışa Aktar</button>
+          <button className="secondary-button" onClick={() => libraryImportRef.current?.click()} type="button">JSON İçe Aktar</button>
+        </div>
+        <input
+          accept="application/json,.json"
+          className="hidden-file-input"
+          onChange={importLibraryArchiveFile}
+          ref={libraryImportRef}
+          type="file"
+        />
+        {libraryMessage && <p className="success-message">{libraryMessage}</p>}
+      </section>
+      <button className="secondary-button full-width" onClick={onSignOut} type="button">
         <Icon name="logout" />
         Çıkış Yap
       </button>
@@ -1775,15 +2941,148 @@ function WarningRow({ title, meta }) {
   );
 }
 
-function ProgramRow({ item }) {
+function countBy(items, getKey) {
+  return items.reduce((map, item) => {
+    const key = getKey(item) || 'Belirsiz';
+    map.set(key, (map.get(key) ?? 0) + 1);
+    return map;
+  }, new Map());
+}
+
+function topEntries(map, limit = 8) {
+  return Array.from(map.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'tr'))
+    .slice(0, limit);
+}
+
+function ProgramArchiveRow({ archive, onDelete, onRestore }) {
+  const items = Array.isArray(archive.items) ? archive.items : [];
+  const matchedCount = items.filter((item) => item.matchedBookId).length;
+  const unmatchedCount = archive.unmatchedCount ?? Math.max(0, items.length - matchedCount);
+  const dayRows = topEntries(countBy(items, (item) => item.day), 10);
+  const bookRows = topEntries(countBy(items, (item) => item.matchedBookName || item.bookName), 10);
+  const topicRows = topEntries(countBy(items, (item) => item.topicName), 10);
+
+  return (
+    <details className="program-archive-row">
+      <summary>
+        <Icon name="history" />
+        <div>
+          <strong>{archive.title}</strong>
+          <span>
+            {formatDateLabel(archive.programDate || archive.importedAt)}
+            {archive.advisor ? ` • ${archive.advisor}` : ''}
+            {archive.studentName ? ` • ${archive.studentName}` : ''}
+          </span>
+        </div>
+        <span className="chip muted">{archive.itemCount ?? archive.items?.length ?? 0} görev</span>
+      </summary>
+      <div className="program-archive-detail">
+        <div className="archive-analysis-grid">
+          <StatCard icon="event_note" value={items.length || archive.itemCount || 0} label="Görev" />
+          <StatCard icon="link" value={matchedCount} label="Eşleşen" />
+          <StatCard icon="link_off" value={unmatchedCount} label="Eşleşmeyen" />
+          <StatCard icon="calendar_month" value={dayRows.length} label="Gün" />
+        </div>
+
+        <div className="archive-analysis-section">
+          <strong>Gün Dağılımı</strong>
+          {dayRows.length === 0 && <span>Gün bilgisi yok.</span>}
+          {dayRows.map((row) => (
+            <div className="archive-analysis-row" key={row.label}>
+              <span>{row.label}</span>
+              <strong>{row.count} görev</strong>
+            </div>
+          ))}
+        </div>
+
+        <div className="archive-analysis-section">
+          <strong>Kitap Dağılımı</strong>
+          {bookRows.length === 0 && <span>Kitap bilgisi yok.</span>}
+          {bookRows.map((row) => (
+            <div className="archive-analysis-row" key={row.label}>
+              <span>{row.label}</span>
+              <strong>{row.count} görev</strong>
+            </div>
+          ))}
+        </div>
+
+        <details className="archive-topic-detail">
+          <summary>Konu dağılımını göster</summary>
+          <div className="archive-analysis-section compact">
+            {topicRows.length === 0 && <span>Konu bilgisi yok.</span>}
+            {topicRows.map((row) => (
+              <div className="archive-analysis-row" key={row.label}>
+                <span>{row.label}</span>
+                <strong>{row.count} görev</strong>
+              </div>
+            ))}
+          </div>
+        </details>
+
+        <p>
+          {unmatchedCount > 0
+            ? `${unmatchedCount} görev arşivdeki kitaplarla eşleşmedi.`
+            : 'Tüm eşleşebilen görevler arşivle kontrol edildi.'}
+        </p>
+        <div className="program-archive-actions">
+          <button className="secondary-button" onClick={() => onRestore(archive.id)} type="button">
+            Bu Programı Aktif Yap
+          </button>
+          <button className="danger-button" onClick={() => onDelete(archive.id)} type="button">
+            Geçmişten Sil
+          </button>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function ProgramRow({ books, item, onClearMatch, onUpdateMatch }) {
+  const [showMatcher, setShowMatcher] = useState(false);
+  const [selectedBookId, setSelectedBookId] = useState(item.matchedBookId || books[0]?.id || '');
+  const hasMatch = Boolean(item.matchedBookId);
+  const matchLabel = item.matchType === 'manual'
+    ? `${item.matchedBookName} ile elle eşleşti`
+    : `${item.matchedBookName} ile eşleşti`;
+
+  const saveMatch = () => {
+    if (!selectedBookId) return;
+    onUpdateMatch(item.id, selectedBookId);
+    setShowMatcher(false);
+  };
+
   return (
     <div className="program-row">
       <Icon name="event_note" />
       <div>
-        {item.matchedBookId && <span className="program-match success">{item.matchedBookName} ile eslesti</span>}
-        {!item.matchedBookId && <span className="program-match warning">Arsivde kitap eslesmesi yok</span>}
+        {hasMatch && <span className="program-match success">{matchLabel}</span>}
+        {!hasMatch && <span className="program-match warning">Arşivde kitap eşleşmesi yok</span>}
         <strong>{item.bookName} • {item.topicName}</strong>
         <span>{item.day} • {item.rawText}</span>
+        {showMatcher && (
+          <div className="program-match-editor">
+            <select value={selectedBookId} onChange={(event) => setSelectedBookId(event.target.value)}>
+              {books.map((book) => (
+                <option key={book.id} value={book.id}>
+                  {book.name}
+                </option>
+              ))}
+            </select>
+            <button className="primary-inline-button" disabled={!selectedBookId} onClick={saveMatch} type="button">
+              Eşleştir
+            </button>
+          </div>
+        )}
+        <button className="text-button program-match-button" onClick={() => setShowMatcher((value) => !value)} type="button">
+          {hasMatch ? 'Değiştir' : 'Kitapla eşleştir'}
+        </button>
+        {hasMatch && (
+          <button className="text-button program-match-remove" onClick={() => onClearMatch(item.id)} type="button">
+            Eşleşmeyi kaldır
+          </button>
+        )}
       </div>
     </div>
   );

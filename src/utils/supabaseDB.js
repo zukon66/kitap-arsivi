@@ -19,6 +19,9 @@ export async function upsertBook(userId, book) {
     publisher: book.publisher ?? '',
     exam_type: book.examType ?? 'TYT',
     subject: book.subject ?? 'Matematik',
+    catalog: book.catalog ?? 'Genel',
+    book_format: book.bookFormat ?? 'Tek Kitap',
+    set_name: book.setName ?? '',
     status: book.status ?? 'aktif',
     is_active_rotation: book.isActiveRotation ?? false,
     total_tests: book.totalTests ?? 0,
@@ -141,6 +144,8 @@ export async function replaceProgramItems(userId, items) {
     matched_book_id: item.matchedBookId ?? '',
     matched_book_name: item.matchedBookName ?? '',
     match_type: item.matchType ?? 'none',
+    match_score: item.matchScore ?? 0,
+    match_reason: item.matchReason ?? '',
     subject: item.subject ?? '',
     topic_name: item.topicName ?? '',
     test_range: item.testRange ?? '',
@@ -150,17 +155,82 @@ export async function replaceProgramItems(userId, items) {
   return { error };
 }
 
+export async function fetchProgramArchives(userId) {
+  const { data, error } = await supabase
+    .from('program_archives')
+    .select('*')
+    .eq('user_id', userId)
+    .order('program_date', { ascending: false })
+    .order('imported_at', { ascending: false });
+  return { data: data ?? [], error };
+}
+
+export async function replaceProgramArchives(userId, archives) {
+  const { error: deleteError } = await supabase.from('program_archives').delete().eq('user_id', userId);
+  if (deleteError) return { error: deleteError };
+  if (!archives.length) return { error: null };
+
+  const rows = archives.map((archive) => ({
+    id: archive.id,
+    user_id: userId,
+    title: archive.title ?? '',
+    program_date: archive.programDate ?? null,
+    meeting_no: archive.meetingNo ?? '',
+    advisor: archive.advisor ?? '',
+    student_name: archive.studentName ?? '',
+    source: archive.source ?? 'ders_programi',
+    item_count: archive.itemCount ?? archive.items?.length ?? 0,
+    unmatched_count: archive.unmatchedCount ?? 0,
+    imported_at: archive.importedAt ?? new Date().toISOString(),
+    items: archive.items ?? [],
+    raw_export: archive.rawExport ?? {},
+  }));
+
+  const { error } = await supabase.from('program_archives').insert(rows);
+  return { error };
+}
+
+export async function fetchProgramMatchRules(userId) {
+  const { data, error } = await supabase
+    .from('program_match_rules')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  return { data: data ?? [], error };
+}
+
+export async function replaceProgramMatchRules(userId, rules) {
+  const { error: deleteError } = await supabase.from('program_match_rules').delete().eq('user_id', userId);
+  if (deleteError) return { error: deleteError };
+  if (!rules.length) return { error: null };
+
+  const rows = rules.map((rule) => ({
+    id: rule.id,
+    user_id: userId,
+    pattern: rule.pattern ?? '',
+    normalized_pattern: rule.normalizedPattern ?? '',
+    book_id: rule.bookId ?? '',
+    book_name: rule.bookName ?? '',
+    created_at: rule.createdAt ?? new Date().toISOString(),
+  }));
+
+  const { error } = await supabase.from('program_match_rules').insert(rows);
+  return { error };
+}
+
 // ── full load (tüm tabloları çek, uygulama state'i olarak döndür) ─────
 
 export async function loadAllFromDB(userId) {
-  const [booksRes, topicsRes, resultsRes, programRes] = await Promise.all([
+  const [booksRes, topicsRes, resultsRes, programRes, archivesRes, rulesRes] = await Promise.all([
     fetchBooks(userId),
     fetchTopics(userId),
     fetchTestResults(userId),
     fetchProgramItems(userId),
+    fetchProgramArchives(userId),
+    fetchProgramMatchRules(userId),
   ]);
 
-  const firstError = booksRes.error || topicsRes.error || resultsRes.error || programRes.error;
+  const firstError = booksRes.error || topicsRes.error || resultsRes.error || programRes.error || archivesRes.error || rulesRes.error;
   if (firstError) throw firstError;
 
   // Kitapları JS formatına çevir ve topic'leri içine göm
@@ -177,13 +247,17 @@ export async function loadAllFromDB(userId) {
 
   const testResults = (resultsRes.data ?? []).map(dbResultToJs);
   const programItems = (programRes.data ?? []).map(dbProgramItemToJs);
+  const programArchives = (archivesRes.data ?? []).map(dbProgramArchiveToJs);
+  const matchRules = (rulesRes.data ?? []).map(dbProgramMatchRuleToJs);
 
-  return { books, testResults, programItems };
+  return { books, testResults, programItems, programArchives, matchRules };
 }
 
 export async function clearUserCloudData(userId) {
   const results = await Promise.all([
     supabase.from('program_items').delete().eq('user_id', userId),
+    supabase.from('program_archives').delete().eq('user_id', userId),
+    supabase.from('program_match_rules').delete().eq('user_id', userId),
     supabase.from('test_results').delete().eq('user_id', userId),
     supabase.from('topics').delete().eq('user_id', userId),
     supabase.from('books').delete().eq('user_id', userId),
@@ -203,6 +277,9 @@ function dbBookToJs(row) {
     publisher: row.publisher,
     examType: row.exam_type,
     subject: row.subject,
+    catalog: row.catalog ?? 'Genel',
+    bookFormat: row.book_format ?? 'Tek Kitap',
+    setName: row.set_name ?? '',
     status: row.status,
     isActiveRotation: row.is_active_rotation,
     totalTests: row.total_tests,
@@ -254,9 +331,39 @@ function dbProgramItemToJs(row) {
     matchedBookId: row.matched_book_id,
     matchedBookName: row.matched_book_name,
     matchType: row.match_type,
+    matchScore: row.match_score ?? 0,
+    matchReason: row.match_reason ?? '',
     subject: row.subject,
     topicName: row.topic_name,
     testRange: row.test_range,
     isRequired: row.is_required,
+  };
+}
+
+function dbProgramArchiveToJs(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    programDate: row.program_date,
+    meetingNo: row.meeting_no,
+    advisor: row.advisor,
+    studentName: row.student_name,
+    source: row.source,
+    itemCount: row.item_count,
+    unmatchedCount: row.unmatched_count,
+    importedAt: row.imported_at,
+    items: row.items ?? [],
+    rawExport: row.raw_export ?? {},
+  };
+}
+
+function dbProgramMatchRuleToJs(row) {
+  return {
+    id: row.id,
+    pattern: row.pattern,
+    normalizedPattern: row.normalized_pattern,
+    bookId: row.book_id,
+    bookName: row.book_name,
+    createdAt: row.created_at,
   };
 }

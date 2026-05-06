@@ -1,6 +1,12 @@
 export const storageKey = (userId) => `kitaparsiv.v1.${userId}`;
 
-export const emptyState = () => ({ books: [], programItems: [], testResults: [] });
+export const emptyState = () => ({
+  books: [],
+  matchRules: [],
+  programItems: [],
+  programArchives: [],
+  testResults: [],
+});
 
 export function loadStoredState(userId) {
   try {
@@ -9,7 +15,9 @@ export function loadStoredState(userId) {
     const parsed = JSON.parse(raw);
     return {
       books: parsed.books ?? [],
+      matchRules: parsed.matchRules ?? [],
       programItems: parsed.programItems ?? [],
+      programArchives: parsed.programArchives ?? [],
       testResults: parsed.testResults ?? [],
     };
   } catch {
@@ -17,11 +25,24 @@ export function loadStoredState(userId) {
   }
 }
 
-export function saveStoredState(userId, nextBooks, nextResults, nextProgramItems = []) {
+export function saveStoredState(
+  userId,
+  nextBooks,
+  nextResults,
+  nextProgramItems = [],
+  nextProgramArchives = [],
+  nextMatchRules = [],
+) {
   try {
     localStorage.setItem(
       storageKey(userId),
-      JSON.stringify({ books: nextBooks, programItems: nextProgramItems, testResults: nextResults }),
+      JSON.stringify({
+        books: nextBooks,
+        matchRules: nextMatchRules,
+        programItems: nextProgramItems,
+        programArchives: nextProgramArchives,
+        testResults: nextResults,
+      }),
     );
     return true;
   } catch {

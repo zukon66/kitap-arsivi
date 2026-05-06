@@ -43,7 +43,7 @@ export function getBringRecommendations(books, testResults, currentProgramItems)
   return recommendations;
 }
 
-export function parseProgramExport(exportJson, books = []) {
+export function parseProgramExport(exportJson, books = [], matchRules = []) {
   const tasks = exportJson?.data?.tasks;
   if (!tasks || typeof tasks !== 'object') throw new Error('tasks alanı bulunamadı');
 
@@ -53,7 +53,7 @@ export function parseProgramExport(exportJson, books = []) {
       const [subjectKey, ...dayParts] = key.split('-');
       const day = normalizeProgramDay(dayParts.join('-'));
       const text = normalizeSpaces(rawText);
-      const archiveMatch = findBestBookMatch(text, books);
+      const archiveMatch = findBestBookMatch(text, books, matchRules);
       const bookName = archiveMatch?.book.name ?? inferBookName(text);
 
       return {
@@ -65,6 +65,8 @@ export function parseProgramExport(exportJson, books = []) {
         matchedBookId: archiveMatch?.book.id ?? '',
         matchedBookName: archiveMatch?.book.name ?? '',
         matchType: archiveMatch?.type ?? 'none',
+        matchScore: archiveMatch?.score ?? 0,
+        matchReason: archiveMatch?.reason ?? '',
         subject: subjectLabel(subjectKey),
         topicName: inferTopicName(text, bookName),
         testRange: inferTestRange(text),
@@ -79,7 +81,8 @@ export function isProgramBookMatch(item, book) {
   if (!bookNorm) return false;
   return normalizeText(item.bookName) === bookNorm
     || normalizeText(item.rawText).includes(bookNorm)
-    || compactTextForMatch(item.rawText).includes(compactTextForMatch(book.name));
+    || compactTextForMatch(item.rawText).includes(compactTextForMatch(book.name))
+    || getBookAliases(book).some((alias) => compactTextForMatch(item.rawText).includes(alias.compact));
 }
 
 export function getTopicMatch(book, programItem) {
@@ -91,30 +94,35 @@ export function getTopicMatch(book, programItem) {
   });
 }
 
-export function findBestBookMatch(text, books) {
+export function findBestBookMatch(text, books, matchRules = []) {
   const normalizedText = normalizeText(text);
   const compactText = compactTextForMatch(text);
   let bestMatch = null;
 
+  const manualRule = findManualRuleMatch(normalizedText, compactText, matchRules, books);
+  if (manualRule) return manualRule;
+
   books.forEach((book) => {
-    const candidates = [
-      { value: book.name, type: 'archive_name', baseScore: 100 },
-      { value: `${book.publisher} ${book.name}`, type: 'publisher_name', baseScore: 95 },
-      { value: `${book.name} ${book.subject}`, type: 'subject_name', baseScore: 88 },
-    ];
+    const candidates = getBookAliases(book);
 
     candidates.forEach((candidate) => {
       const normalizedCandidate = normalizeText(candidate.value);
-      const compactCandidate = compactTextForMatch(candidate.value);
+      const compactCandidate = candidate.compact;
       if (!normalizedCandidate) return;
 
       let score = 0;
-      if (normalizedText.includes(normalizedCandidate)) score = candidate.baseScore;
-      else if (compactText.includes(compactCandidate)) score = candidate.baseScore - 6;
+      let reason = 'token_match';
+      if (normalizedText.includes(normalizedCandidate)) {
+        score = candidate.baseScore;
+        reason = 'normalized_phrase_match';
+      } else if (compactText.includes(compactCandidate)) {
+        score = candidate.baseScore - 4;
+        reason = 'compact_alias_match';
+      }
       else score = tokenMatchScore(normalizedText, normalizedCandidate);
 
       if (score >= 58 && (!bestMatch || score > bestMatch.score)) {
-        bestMatch = { book, score, type: candidate.type };
+        bestMatch = { book, score, type: candidate.type, reason };
       }
     });
   });
@@ -138,12 +146,95 @@ function tokenMatchScore(text, candidate) {
   return Math.round(ratio * 86);
 }
 
+function findManualRuleMatch(normalizedText, compactText, matchRules, books) {
+  for (const rule of matchRules) {
+    const pattern = normalizeText(rule.normalizedPattern || rule.pattern);
+    const compactPattern = compactTextForMatch(pattern);
+    if (!pattern || !rule.bookId) continue;
+    if (!normalizedText.includes(pattern) && !compactText.includes(compactPattern)) continue;
+
+    const book = books.find((item) => item.id === rule.bookId);
+    if (book) {
+      return {
+        book,
+        score: 120,
+        type: 'manual_rule',
+        reason: 'manual_rule_match',
+      };
+    }
+  }
+  return null;
+}
+
+function getBookAliases(book) {
+  const values = [
+    { value: book.name, type: 'archive_name', baseScore: 100 },
+    { value: `${book.publisher} ${book.name}`, type: 'publisher_name', baseScore: 96 },
+    { value: `${book.name} ${book.subject}`, type: 'subject_name', baseScore: 90 },
+    ...expandAliasValues(book.name).map((value) => ({ value, type: 'alias_name', baseScore: 94 })),
+    ...expandAliasValues(`${book.publisher} ${book.name}`).map((value) => ({ value, type: 'publisher_alias', baseScore: 90 })),
+  ];
+
+  const seen = new Set();
+  return values
+    .map((candidate) => ({
+      ...candidate,
+      value: normalizeSpaces(candidate.value),
+      compact: compactTextForMatch(candidate.value),
+    }))
+    .filter((candidate) => {
+      if (!candidate.value || seen.has(candidate.compact)) return false;
+      seen.add(candidate.compact);
+      return true;
+    });
+}
+
+function expandAliasValues(value) {
+  const normalized = normalizeText(value);
+  const aliases = new Set();
+  const replacements = [
+    ['orjinal', 'orijinal'],
+    ['orijinal', 'orjinal'],
+    ['mikro orijinal', 'mikroorijinal'],
+    ['mikro orijinal', 'mikro orjinal'],
+    ['mikro orjinal', 'mikroorjinal'],
+    ['bilgi sarmal', 'bilgisarmal'],
+    ['kafa dengi', 'kafadengi'],
+    ['kafadengi', 'kafa dengi'],
+    ['uc dort bes', '345'],
+    ['345', 'uc dort bes'],
+    ['ucdortbes', '345'],
+  ];
+
+  replacements.forEach(([from, to]) => {
+    if (normalized.includes(from)) aliases.add(normalized.replaceAll(from, to));
+  });
+
+  aliases.add(compactTextForMatch(normalized));
+  return [...aliases].filter(Boolean);
+}
+
 function compactTextForMatch(value) {
-  return normalizeText(value).replace(/[^a-z0-9]/g, '');
+  return normalizeAliasText(value).replace(/[^a-z0-9]/g, '');
+}
+
+function normalizeAliasText(value) {
+  return normalizeText(value)
+    .replaceAll('orjinal', 'orijinal')
+    .replaceAll('mikroorjinal', 'mikroorijinal')
+    .replaceAll('bilgisarmal', 'bilgi sarmal')
+    .replaceAll('kafadengi', 'kafa dengi')
+    .replaceAll('ucdortbes', '345');
 }
 
 function normalizeBookToken(token) {
-  return token.replace('orjinal', 'orijinal').replace('paragrafin', 'paragraf');
+  return token
+    .replace('orjinal', 'orijinal')
+    .replace('mikroorjinal', 'mikroorijinal')
+    .replace('bilgisarmal', 'bilgi')
+    .replace('kafadengi', 'dengi')
+    .replace('ucdortbes', '345')
+    .replace('paragrafin', 'paragraf');
 }
 
 const BOOK_MATCH_STOP_WORDS = new Set(['tyt', 'ayt', 'yayin', 'yayinlari', 'kitap', 'test', 'soru', 'coz']);

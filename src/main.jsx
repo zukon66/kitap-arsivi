@@ -25,6 +25,7 @@ const DEMO_SESSION_KEY = 'kitaparsiv.demoSession';
 const DEMO_USER_ID = 'demo-user-codex';
 const DEMO_EMAIL = 'codex.demo@kitaparsiv.test';
 const THEME_KEY = 'kitaparsiv.theme';
+const SELECTED_BOOK_KEY = 'kitaparsiv.selectedBook';
 const TOPIC_DISTRIBUTION_SCHEMA_TYPE = 'kitaparsiv-topic-distribution';
 const TOPIC_DISTRIBUTION_SCHEMA_VERSION = 1;
 
@@ -74,6 +75,17 @@ const emptyBookForm = {
   coverImage: '',
 };
 
+function createEmptyBookForm(parentSet = null) {
+  return {
+    ...emptyBookForm,
+    examType: parentSet?.examType ?? emptyBookForm.examType,
+    subject: parentSet?.subject ?? emptyBookForm.subject,
+    catalog: parentSet?.catalog ?? emptyBookForm.catalog,
+    bookFormat: parentSet ? 'Tek Kitap' : emptyBookForm.bookFormat,
+    setName: parentSet ? (parentSet.setName || parentSet.name) : emptyBookForm.setName,
+  };
+}
+
 const emptyResultForm = {
   bookId: '',
   topicId: '',
@@ -120,6 +132,34 @@ function getBookEffectiveCatalog(book) {
   if (haystack.includes('problem')) return 'Problem';
 
   return book.catalog || 'Genel';
+}
+
+function isSetContainer(book) {
+  return book?.bookFormat === 'Set' && !book?.parentSetId;
+}
+
+function getLibraryRootBooks(books) {
+  return books.filter((book) => !book.parentSetId);
+}
+
+function getActionableBooks(books) {
+  return books.filter((book) => !isSetContainer(book));
+}
+
+function getSetChildren(books, setId) {
+  return books.filter((book) => book.parentSetId === setId);
+}
+
+function getSetTotals(books, setId) {
+  return getSetChildren(books, setId).reduce(
+    (acc, child) => ({
+      bookCount: acc.bookCount + 1,
+      totalTests: acc.totalTests + (Number(child.totalTests) || 0),
+      solvedTests: acc.solvedTests + (Number(child.solvedTests) || 0),
+      topicCount: acc.topicCount + (child.topics?.length ?? 0),
+    }),
+    { bookCount: 0, totalTests: 0, solvedTests: 0, topicCount: 0 },
+  );
 }
 
 function getBookSummaryGroupValue(book, groupBy) {
@@ -222,8 +262,34 @@ function parseTopicDistributionImport(payload, bookName) {
 }
 
 function getInitialPage() {
-  const page = window.location.hash.replace('#', '');
+  const page = window.location.hash.replace('#', '').split('/')[0];
   return navItems.some((item) => item.id === page) || page === 'book' ? page : 'dashboard';
+}
+
+function getBookIdFromHash() {
+  const hash = window.location.hash.replace('#', '');
+  const [page, rawBookId] = hash.split('/');
+  if (page !== 'book' || !rawBookId) return '';
+
+  try {
+    return decodeURIComponent(rawBookId);
+  } catch {
+    return rawBookId;
+  }
+}
+
+function selectedBookStorageKey(userId) {
+  return `${SELECTED_BOOK_KEY}.${userId}`;
+}
+
+function getPreferredBookId(books, userId) {
+  const hashBookId = getBookIdFromHash();
+  if (hashBookId && books.some((book) => book.id === hashBookId)) return hashBookId;
+
+  const storedBookId = userId ? localStorage.getItem(selectedBookStorageKey(userId)) : '';
+  if (storedBookId && books.some((book) => book.id === storedBookId)) return storedBookId;
+
+  return books[0]?.id;
 }
 
 function LoadingScreen() {
@@ -454,7 +520,7 @@ function App() {
 
   const selectedBook = appData.books.find((book) => book.id === selectedBookId) ?? appData.books[0];
   const recommendations = useMemo(
-    () => getBringRecommendations(appData.books, appData.testResults, appData.programItems),
+    () => getBringRecommendations(getActionableBooks(appData.books), appData.testResults, appData.programItems),
     [appData.books, appData.programItems, appData.testResults],
   );
 
@@ -465,7 +531,7 @@ function App() {
       if (books.length > 0 || testResults.length > 0 || programItems.length > 0 || programArchives.length > 0 || matchRules.length > 0) {
         const fresh = { books, testResults, programItems, programArchives, matchRules };
         setAppData(fresh);
-        setSelectedBookId(books[0]?.id);
+        setSelectedBookId(getPreferredBookId(books, userId));
         setLastSavedAt(null);
         saveStoredState(userId, books, testResults, programItems, programArchives, matchRules);
         return;
@@ -478,7 +544,7 @@ function App() {
     if (activeUserIdRef.current !== userId) return;
     const stored = loadStoredState(userId);
     setAppData(stored);
-    setSelectedBookId(stored.books[0]?.id);
+    setSelectedBookId(getPreferredBookId(stored.books, userId));
     setLastSavedAt(null);
   }, []);
 
@@ -487,7 +553,7 @@ function App() {
     const stored = loadStoredState(DEMO_USER_ID);
     const fresh = stored.books.length > 0 ? stored : createDemoState();
     setAppData(fresh);
-    setSelectedBookId(fresh.books[0]?.id);
+    setSelectedBookId(getPreferredBookId(fresh.books, DEMO_USER_ID));
     setLastSavedAt(null);
     saveStoredState(
       DEMO_USER_ID,
@@ -552,7 +618,11 @@ function App() {
   }, [loadDemoData, loadUserData]);
 
   useEffect(() => {
-    const syncPageFromHash = () => setPage(getInitialPage());
+    const syncPageFromHash = () => {
+      setPage(getInitialPage());
+      const hashBookId = getBookIdFromHash();
+      if (hashBookId) setSelectedBookId(hashBookId);
+    };
     window.addEventListener('hashchange', syncPageFromHash);
     return () => window.removeEventListener('hashchange', syncPageFromHash);
   }, []);
@@ -562,9 +632,11 @@ function App() {
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  const navigate = (nextPage) => {
+  const navigate = (nextPage, bookId = '') => {
     setPage(nextPage);
-    window.location.hash = nextPage;
+    window.location.hash = nextPage === 'book' && bookId
+      ? `book/${encodeURIComponent(bookId)}`
+      : nextPage;
   };
 
   const toggleTheme = () => {
@@ -650,10 +722,11 @@ function App() {
     }, 1500);
   };
 
-  const addBook = (form) => {
+  const addBook = (form, parentSetId = '') => {
     const totalTests = Number(form.topicTotalTests) || 0;
     const initialSolved = Math.min(Number(form.initialSolvedTests) || 0, totalTests);
     const topicId = createId('topic', form.topicName || 'konu');
+    const isRootSet = form.bookFormat === 'Set' && !parentSetId;
     const book = {
       id: createId('book', form.name),
       name: form.name.trim(),
@@ -663,12 +736,13 @@ function App() {
       catalog: form.catalog,
       bookFormat: form.bookFormat,
       setName: form.setName.trim(),
+      parentSetId,
       status: form.status,
       isActiveRotation: form.status === 'aktif',
-      totalTests,
-      solvedTests: initialSolved,
+      totalTests: isRootSet ? 0 : totalTests,
+      solvedTests: isRootSet ? 0 : initialSolved,
       coverImage: form.coverImage,
-      topics: [
+      topics: isRootSet ? [] : [
         {
           id: topicId,
           name: form.topicName.trim(),
@@ -685,22 +759,29 @@ function App() {
     const nextBooks = [book, ...appData.books];
     updateData(nextBooks);
     setSelectedBookId(book.id);
-    navigate('book');
+    localStorage.setItem(selectedBookStorageKey(session.user.id), book.id);
+    navigate('book', book.id);
   };
 
   const deleteBook = (bookId) => {
     const targetBook = appData.books.find((book) => book.id === bookId);
     if (!targetBook) return;
+    const childIds = isSetContainer(targetBook)
+      ? appData.books.filter((book) => book.parentSetId === bookId).map((book) => book.id)
+      : [];
+    const deletedBookIds = new Set([bookId, ...childIds]);
 
     const confirmed = window.confirm(`${targetBook.name} kitabını silmek istiyor musun? Bu kitaba bağlı test kayıtları da silinir.`);
     if (!confirmed) return;
 
-    const nextBooks = appData.books.filter((book) => book.id !== bookId);
-    const nextResults = appData.testResults.filter((result) => result.bookId !== bookId);
+    const nextBooks = appData.books.filter((book) => !deletedBookIds.has(book.id));
+    const nextResults = appData.testResults.filter((result) => !deletedBookIds.has(result.bookId));
     updateData(nextBooks, nextResults);
-    dbDeleteBook(session.user.id, bookId);
+    deletedBookIds.forEach((id) => dbDeleteBook(session.user.id, id));
     if (selectedBookId === bookId) {
-      setSelectedBookId(nextBooks[0]?.id);
+      const nextSelectedBookId = nextBooks[0]?.id;
+      setSelectedBookId(nextSelectedBookId);
+      if (nextSelectedBookId) localStorage.setItem(selectedBookStorageKey(session.user.id), nextSelectedBookId);
     }
   };
 
@@ -853,7 +934,8 @@ function App() {
 
     updateData(nextBooks, [result, ...appData.testResults]);
     setSelectedBookId(book.id);
-    navigate('book');
+    localStorage.setItem(selectedBookStorageKey(session.user.id), book.id);
+    navigate('book', book.id);
   };
 
   const updateTestResult = (resultId, form) => {
@@ -1069,7 +1151,8 @@ function App() {
 
   const openBook = (bookId) => {
     setSelectedBookId(bookId);
-    navigate('book');
+    localStorage.setItem(selectedBookStorageKey(session.user.id), bookId);
+    navigate('book', bookId);
   };
 
   if (authLoading) return <LoadingScreen />;
@@ -1086,7 +1169,7 @@ function App() {
     >
       {page === 'dashboard' && (
         <Dashboard
-          books={appData.books}
+          books={getActionableBooks(appData.books)}
           onNavigate={navigate}
           recommendations={recommendations}
           testResults={appData.testResults}
@@ -1109,7 +1192,7 @@ function App() {
       )}
       {page === 'add' && (
         <AddResult
-          books={appData.books}
+          books={getActionableBooks(appData.books)}
           onDeleteResult={deleteTestResult}
           onSave={addTestResult}
           onUpdateResult={updateTestResult}
@@ -1119,11 +1202,14 @@ function App() {
       {page === 'book' && selectedBook && (
         <BookDetail
           book={selectedBook}
+          books={appData.books}
           onAdd={() => navigate('add')}
+          onAddBookToSet={addBook}
           onAddTopic={addTopic}
           onBack={() => navigate('library')}
           onDeleteTopic={deleteTopic}
           onImportTopics={importBookTopics}
+          onOpenBook={openBook}
           testResults={appData.testResults}
           onUpdateBook={updateBookDetails}
           onUpdateTopic={updateTopic}
@@ -1294,9 +1380,10 @@ function GeneralSummary({ books, testResults }) {
   const [onlyActive, setOnlyActive] = useState(false);
   const [query, setQuery] = useState('');
 
-  const visibleBooks = useMemo(() => (
-    onlyActive ? books.filter((book) => book.status === 'aktif') : books
-  ), [books, onlyActive]);
+  const visibleBooks = useMemo(() => {
+    const summaryBooks = getActionableBooks(books);
+    return onlyActive ? summaryBooks.filter((book) => book.status === 'aktif') : summaryBooks;
+  }, [books, onlyActive]);
 
   const totals = useMemo(() => visibleBooks.reduce(
     (acc, book) => {
@@ -1557,20 +1644,59 @@ function Library({ books, onAddBook, onDeleteBook, onOpenBook }) {
 function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId }) {
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('Tümü');
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedFilters, setSelectedFilters] = useState([]);
   const [sortSolvedFirst, setSortSolvedFirst] = useState(false);
-  const filteredBooks = books.filter((book) => {
+  const rootBooks = getLibraryRootBooks(books);
+  const filterGroups = useMemo(() => {
+    const groups = [
+      { id: 'catalog', title: 'Katalog', values: ['Soru Bankası', 'Konu Anlatımlı Soru Bankası', 'Konu Anlatım', 'Deneme', 'Problem', 'Geometri', 'Paragraf'] },
+      { id: 'class', title: 'Sınıf / Tür', values: ['TYT', 'AYT', 'TYT-AYT', '11. Sınıf', '12. Sınıf'] },
+      { id: 'subject', title: 'Ders', values: subjectOptions },
+      { id: 'format', title: 'Yapı', values: ['Set', 'Fasikül', 'Tek Kitap'] },
+      { id: 'status', title: 'Durum', values: ['Aktif', 'Beklemede', 'Başlanmadı', 'Bitti'] },
+    ];
+
+    return groups.map((group) => ({
+      ...group,
+      values: group.values.filter((value, index, values) => (
+        values.indexOf(value) === index
+        && rootBooks.some((book) => {
+          const effectiveCatalog = getBookEffectiveCatalog(book);
+          const status = statusLabel(book.status);
+          return [book.subject, book.examType, effectiveCatalog, book.catalog, book.bookFormat, book.setName, status]
+            .some((item) => normalizeText(item ?? '') === normalizeText(value));
+        })
+      )),
+    })).filter((group) => group.values.length > 0);
+  }, [rootBooks]);
+
+  const toggleFilter = (value) => {
+    setSelectedFilters((current) => (
+      current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+    ));
+  };
+
+  const filteredBooks = rootBooks.filter((book) => {
     const effectiveCatalog = getBookEffectiveCatalog(book);
-    const searchTarget = normalizeText(`${book.name} ${book.publisher} ${book.subject} ${book.examType} ${effectiveCatalog} ${book.catalog ?? ''} ${book.bookFormat ?? ''} ${book.setName ?? ''} ${book.status} ${book.topics.map((topic) => topic.name).join(' ')}`);
+    const childSearchTarget = isSetContainer(book)
+      ? getSetChildren(books, book.id).map((child) => `${child.name} ${child.publisher} ${child.subject} ${child.examType} ${child.topics.map((topic) => topic.name).join(' ')}`).join(' ')
+      : '';
+    const searchTarget = normalizeText(`${book.name} ${book.publisher} ${book.subject} ${book.examType} ${effectiveCatalog} ${book.catalog ?? ''} ${book.bookFormat ?? ''} ${book.setName ?? ''} ${book.status} ${book.topics.map((topic) => topic.name).join(' ')} ${childSearchTarget}`);
     const matchesQuery = !query.trim() || searchTarget.includes(normalizeText(query));
-    const matchesFilter = activeFilter === 'Tümü'
-      || normalizeText(book.subject) === normalizeText(activeFilter)
-      || normalizeText(book.examType) === normalizeText(activeFilter)
-      || normalizeText(effectiveCatalog) === normalizeText(activeFilter)
-      || normalizeText(book.catalog ?? '') === normalizeText(activeFilter)
-      || normalizeText(book.bookFormat ?? '') === normalizeText(activeFilter)
-      || normalizeText(book.setName ?? '') === normalizeText(activeFilter)
-      || (activeFilter === 'Aktif' && book.status === 'aktif');
+    const bookFilterValues = [
+      book.subject,
+      book.examType,
+      effectiveCatalog,
+      book.catalog,
+      book.bookFormat,
+      book.setName,
+      statusLabel(book.status),
+    ].map((item) => normalizeText(item ?? ''));
+    const matchesFilter = selectedFilters.length === 0
+      || selectedFilters.every((filter) => bookFilterValues.includes(normalizeText(filter)));
 
     return matchesQuery && matchesFilter;
   });
@@ -1597,6 +1723,14 @@ function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId })
               <Icon name="sort" />
               {sortSolvedFirst ? 'Sıralı' : 'Sırala'}
             </button>
+            <button
+              className={showFilters || selectedFilters.length > 0 ? 'primary-inline-button' : 'secondary-inline-button'}
+              onClick={() => setShowFilters((value) => !value)}
+              type="button"
+            >
+              <Icon name="filter_list" />
+              Filtrele{selectedFilters.length > 0 ? ` (${selectedFilters.length})` : ''}
+            </button>
             <button className="primary-inline-button" onClick={() => setShowForm((value) => !value)} type="button">
               {showForm ? 'Formu Kapat' : 'Kitap Ekle'}
             </button>
@@ -1611,27 +1745,47 @@ function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId })
             value={query}
           />
         </div>
-        <div className="chips-row">
-          {libraryFilters.map((label) => (
-            <button
-              className={`chip ${activeFilter === label ? 'primary' : ''}`}
-              key={label}
-              onClick={() => setActiveFilter(label)}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {showFilters && (
+          <div className="filter-panel">
+            <div className="filter-panel-head">
+              <strong>Filtreler</strong>
+              {selectedFilters.length > 0 && (
+                <button className="text-button" onClick={() => setSelectedFilters([])} type="button">
+                  Temizle
+                </button>
+              )}
+            </div>
+            <div className="filter-groups">
+              {filterGroups.map((group) => (
+                <fieldset className="filter-group" key={group.id}>
+                  <legend>{group.title}</legend>
+                  <div className="filter-checks">
+                    {group.values.map((value) => (
+                      <label className="filter-check" key={`${group.id}-${value}`}>
+                        <input
+                          checked={selectedFilters.includes(value)}
+                          onChange={() => toggleFilter(value)}
+                          type="checkbox"
+                        />
+                        <span>{value}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
       {showForm && <BookForm onAddBook={onAddBook} userId={userId} />}
       <section className="stack">
-        {books.length === 0 && <EmptyState text="Henuz kitap yok. Kitap Ekle butonuyla gercek kitaplarini eklemeye baslayabilirsin." />}
+        {rootBooks.length === 0 && <EmptyState text="Henuz kitap yok. Kitap Ekle butonuyla gercek kitaplarini eklemeye baslayabilirsin." />}
         {books.length > 0 && visibleBooks.length === 0 && <EmptyState text="Bu arama veya filtreyle eslesen kitap yok." />}
         {visibleBooks.map((book) => (
           <article className="book-card" key={book.id}>
             {(() => {
               const effectiveCatalog = getBookEffectiveCatalog(book);
+              const setTotals = isSetContainer(book) ? getSetTotals(books, book.id) : null;
               return (
                 <>
                   <div className="card-top">
@@ -1639,7 +1793,7 @@ function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId })
                       <span className="chip small">{book.subject}</span>
                       <span className="chip small muted">{book.examType}</span>
                       {effectiveCatalog && effectiveCatalog !== 'Genel' && <span className="chip small muted">{effectiveCatalog}</span>}
-                      {book.bookFormat && book.bookFormat !== 'Tek Kitap' && <span className="chip small muted">{book.bookFormat}</span>}
+                      {isSetContainer(book) ? <span className="chip small muted">Set Klasörü</span> : book.bookFormat && book.bookFormat !== 'Tek Kitap' && <span className="chip small muted">{book.bookFormat}</span>}
                       <span className="chip small primary">{statusLabel(book.status)}</span>
                     </div>
                     <button
@@ -1655,10 +1809,17 @@ function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId })
                     <CoverThumb book={book} />
                     <div>
                       <h2>{book.name}</h2>
-                      <p>{book.publisher} - {[book.setName, ...book.topics.map((topic) => topic.name).slice(0, 2)].filter(Boolean).join(', ')}</p>
+                      <p>
+                        {isSetContainer(book)
+                          ? `${book.publisher} - ${setTotals.bookCount} kitap - ${setTotals.solvedTests}/${setTotals.totalTests} test`
+                          : `${book.publisher} - ${[book.setName, ...book.topics.map((topic) => topic.name).slice(0, 2)].filter(Boolean).join(', ')}`}
+                      </p>
                     </div>
                   </button>
-                  <ProgressLine label={`Ilerleme - ${book.solvedTests}/${book.totalTests} test`} value={bookProgress(book)} />
+                  <ProgressLine
+                    label={isSetContainer(book) ? `Set ilerleme - ${setTotals.solvedTests}/${setTotals.totalTests} test` : `Ilerleme - ${book.solvedTests}/${book.totalTests} test`}
+                    value={isSetContainer(book) && setTotals.totalTests > 0 ? Math.round((setTotals.solvedTests / setTotals.totalTests) * 100) : bookProgress(book)}
+                  />
                 </>
               );
             })()}
@@ -1669,16 +1830,22 @@ function FilteredLibrary({ books, onAddBook, onDeleteBook, onOpenBook, userId })
   );
 }
 
-function BookForm({ onAddBook, userId }) {
-  const [form, setForm] = useState(emptyBookForm);
+function BookForm({ onAddBook, parentSet = null, userId }) {
+  const [form, setForm] = useState(() => createEmptyBookForm(parentSet));
+  const isSetChildForm = Boolean(parentSet);
+  const formatOptions = isSetChildForm
+    ? bookFormatOptions.filter((item) => item !== 'Set')
+    : bookFormatOptions;
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
   const submit = (event) => {
     event.preventDefault();
-    if (!form.name.trim() || !form.topicName.trim() || !form.topicTotalTests) return;
+    const isRootSet = form.bookFormat === 'Set' && !isSetChildForm;
+    if (!form.name.trim()) return;
+    if (!isRootSet && (!form.topicName.trim() || !form.topicTotalTests)) return;
     onAddBook(form);
-    setForm(emptyBookForm);
+    setForm(createEmptyBookForm(parentSet));
   };
 
   return (
@@ -1719,7 +1886,7 @@ function BookForm({ onAddBook, userId }) {
         <label className="field">
           <span>Kitap Yapısı</span>
           <select value={form.bookFormat} onChange={(event) => update('bookFormat', event.target.value)}>
-            {bookFormatOptions.map((item) => <option key={item}>{item}</option>)}
+            {formatOptions.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
       </div>
@@ -2006,7 +2173,21 @@ function TestResultRow({ book, onDelete, onUpdate, result }) {
   );
 }
 
-function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onImportTopics, onUpdateBook, onUpdateTopic, testResults, userId }) {
+function BookDetail({
+  book,
+  books,
+  onAdd,
+  onAddBookToSet,
+  onAddTopic,
+  onBack,
+  onDeleteTopic,
+  onImportTopics,
+  onOpenBook,
+  onUpdateBook,
+  onUpdateTopic,
+  testResults,
+  userId,
+}) {
   const topicImportRef = useRef(null);
   const [showBookEditor, setShowBookEditor] = useState(false);
   const [showTopicForm, setShowTopicForm] = useState(false);
@@ -2016,6 +2197,9 @@ function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onImportTo
     ? testResults.filter((result) => result.bookId === book.id && result.topicId === selectedTopic.id)
     : [];
   const bookResultCount = testResults.filter((result) => result.bookId === book.id).length;
+  const isSet = isSetContainer(book);
+  const setChildren = isSet ? getSetChildren(books, book.id) : [];
+  const setTotals = isSet ? getSetTotals(books, book.id) : null;
 
   const exportTopicDistribution = () => {
     const payload = createTopicDistributionExport(book);
@@ -2071,10 +2255,19 @@ function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onImportTo
         <h1>{book.name}</h1>
         <p>{book.publisher} • {book.examType} {book.subject} • {statusLabel(book.status)}</p>
         <div className="summary-pills">
-          <span><Icon name="library_books" /> {book.topics.length} Konu</span>
-          <span><Icon name="task_alt" /> {book.solvedTests}/{book.totalTests} Test</span>
+          {isSet ? (
+            <>
+              <span><Icon name="folder" /> {setTotals.bookCount} Kitap</span>
+              <span><Icon name="task_alt" /> {setTotals.solvedTests}/{setTotals.totalTests} Test</span>
+            </>
+          ) : (
+            <>
+              <span><Icon name="library_books" /> {book.topics.length} Konu</span>
+              <span><Icon name="task_alt" /> {book.solvedTests}/{book.totalTests} Test</span>
+            </>
+          )}
         </div>
-        <button className="primary-button" onClick={onAdd} type="button">Test Sonucu Gir</button>
+        {!isSet && <button className="primary-button" onClick={onAdd} type="button">Test Sonucu Gir</button>}
         <button className="secondary-button" onClick={() => setShowBookEditor((value) => !value)} type="button">
           {showBookEditor ? 'Duzenlemeyi Kapat' : 'Kitabi Duzenle'}
         </button>
@@ -2090,6 +2283,16 @@ function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onImportTo
           userId={userId}
         />
       )}
+      {isSet && (
+        <SetBooksSection
+          books={setChildren}
+          onAddBook={(form) => onAddBookToSet(form, book.id)}
+          onOpenBook={onOpenBook}
+          parentSet={book}
+          userId={userId}
+        />
+      )}
+      {!isSet && (
       <section className="section topic-management">
         <div className="section-title">
           <h2>Konu Dagilimi</h2>
@@ -2137,6 +2340,7 @@ function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onImportTo
           ))}
         </div>
       </section>
+      )}
       {selectedTopic && (
         <TopicStatsModal
           onClose={() => setSelectedTopic(null)}
@@ -2145,6 +2349,57 @@ function BookDetail({ book, onAdd, onAddTopic, onBack, onDeleteTopic, onImportTo
         />
       )}
     </>
+  );
+}
+
+function SetBooksSection({ books, onAddBook, onOpenBook, parentSet, userId }) {
+  const [showForm, setShowForm] = useState(false);
+
+  return (
+    <section className="section topic-management">
+      <div className="section-title">
+        <div>
+          <h2>Set İçindeki Kitaplar</h2>
+          <p>{books.length} kitap bu set klasörüne bağlı.</p>
+        </div>
+        <button className="primary-inline-button" onClick={() => setShowForm((value) => !value)} type="button">
+          {showForm ? 'Kapat' : 'Kitap Ekle'}
+        </button>
+      </div>
+      {showForm && (
+        <BookForm
+          onAddBook={(form) => {
+            onAddBook(form);
+            setShowForm(false);
+          }}
+          parentSet={parentSet}
+          userId={userId}
+        />
+      )}
+      <div className="stack">
+        {books.length === 0 && <EmptyState text="Bu setin içinde henüz kitap yok. Kitap Ekle ile setin parçalarını ekleyebilirsin." />}
+        {books.map((book) => (
+          <article className="book-card" key={book.id}>
+            <div className="card-top">
+              <div className="chips-row compact">
+                <span className="chip small">{book.subject}</span>
+                <span className="chip small muted">{book.examType}</span>
+                {book.bookFormat && <span className="chip small muted">{book.bookFormat}</span>}
+                <span className="chip small primary">{statusLabel(book.status)}</span>
+              </div>
+            </div>
+            <button className="book-card-main" onClick={() => onOpenBook(book.id)} type="button">
+              <CoverThumb book={book} />
+              <div>
+                <h2>{book.name}</h2>
+                <p>{book.publisher} - {book.topics.map((topic) => topic.name).slice(0, 2).join(', ')}</p>
+              </div>
+            </button>
+            <ProgressLine label={`İlerleme - ${book.solvedTests}/${book.totalTests} test`} value={bookProgress(book)} />
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

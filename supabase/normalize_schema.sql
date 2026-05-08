@@ -12,6 +12,7 @@ create table if not exists public.books (
   catalog       text        not null default 'Genel',
   book_format   text        not null default 'Tek Kitap',
   set_name      text        not null default '',
+  parent_set_id text        not null default '',
   status        text        not null default 'aktif',
   is_active_rotation boolean not null default false,
   total_tests   integer     not null default 0,
@@ -28,7 +29,8 @@ alter table public.books enable row level security;
 alter table public.books
   add column if not exists catalog text not null default 'Genel',
   add column if not exists book_format text not null default 'Tek Kitap',
-  add column if not exists set_name text not null default '';
+  add column if not exists set_name text not null default '',
+  add column if not exists parent_set_id text not null default '';
 
 drop policy if exists "books_select" on public.books;
 create policy "books_select" on public.books for select to authenticated using (auth.uid() = user_id);

@@ -968,6 +968,72 @@ h3 {
   justify-content: flex-end;
 }
 
+.filter-panel {
+  border: 1px solid var(--outline);
+  border-radius: 16px;
+  background: var(--surface);
+  padding: 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+.filter-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.filter-panel-head strong {
+  font-size: 15px;
+}
+
+.filter-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.filter-group {
+  min-width: 0;
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.filter-group legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.filter-checks {
+  display: grid;
+  gap: 8px;
+}
+
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.filter-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.filter-check span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .danger-button {
   background: var(--error-soft);
   color: var(--error);
@@ -1504,6 +1570,10 @@ h3 {
 
   .library-actions button {
     flex: 1;
+  }
+
+  .filter-groups {
+    grid-template-columns: 1fr;
   }
 
   .topic-actions-row button {

@@ -593,19 +593,26 @@ function App() {
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       const sess = nextSession ?? null;
+      const nextUserId = sess?.user?.id ?? null;
+      const currentUserId = activeUserIdRef.current;
       setSession(sess);
       setAuthLoading(false);
+
+      if (nextUserId && nextUserId === currentUserId) {
+        return;
+      }
+
       if (syncTimer.current) {
         clearTimeout(syncTimer.current);
         syncTimer.current = null;
       }
-      if (sess?.user?.id) {
-        activeUserIdRef.current = sess.user.id;
+      if (nextUserId) {
+        activeUserIdRef.current = nextUserId;
         setAppData(emptyState());
         setSelectedBookId(undefined);
         setLastSavedAt(null);
         setSyncStatus(null);
-        loadUserData(sess.user.id);
+        loadUserData(nextUserId);
       } else {
         activeUserIdRef.current = null;
         setAppData(emptyState());
